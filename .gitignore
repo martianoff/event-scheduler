@@ -12,3 +12,7 @@
 *.out
 
 coverage.txt
+
+# Other
+pubsub.json
+TODO.MD
