@@ -25,7 +25,7 @@ func TestPrioritizer_Boot(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "Test prioritizer boot",
+			name: "Check prioritizer boot",
 			fields: fields{
 				inboundPool: inboundPool,
 				dataStorage: dataStorage,
