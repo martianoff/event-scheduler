@@ -85,6 +85,17 @@ func Test_setupLogger(t *testing.T) {
 			wantFormat: &log.TextFormatter{},
 			wantLevel:  "warning",
 		},
+		{
+			name: "Check logger options, text plus error",
+			args: args{
+				config.Config{
+					LogFormat: "text",
+					LogLevel:  "error",
+				},
+			},
+			wantFormat: &log.TextFormatter{},
+			wantLevel:  "error",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
