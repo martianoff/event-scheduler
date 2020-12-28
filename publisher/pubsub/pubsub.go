@@ -18,7 +18,6 @@ const DispatcherThreads = 5
 type PubsubPublisher struct {
 	config       config.Config
 	outboundPool *goconcurrentqueue.FIFO
-	pubsubClient *pubsub.Client
 }
 
 func (p *PubsubPublisher) Boot(config config.Config, outboundPool *goconcurrentqueue.FIFO) error {
@@ -51,16 +50,13 @@ func (p PubsubPublisher) Dispatch() error {
 	t := client.Topic(p.config.PubsubPublisherTopicID)
 
 	var dispatcherWg sync.WaitGroup
-
-	for threadId := 0; threadId < DispatcherThreads; threadId++ {
-
+	for threadID := 0; threadID < DispatcherThreads; threadID++ {
 		dispatcherWg.Add(1)
 
 		go func(threadId int) {
 			defer dispatcherWg.Done()
 
 			for {
-
 				if p.outboundPool.GetLen() == 0 {
 					log.Tracef("publisher queue is empty, thread (%v)", threadId)
 					time.Sleep(time.Second)
@@ -96,17 +92,10 @@ func (p PubsubPublisher) Dispatch() error {
 					}
 					log.Tracef("publisher message published, thread (%v): %v", threadId, id)
 				}(threadId, result, msg)
-
 				wg.Wait()
-
 			}
-
-		}(threadId)
-
+		}(threadID)
 	}
-
 	dispatcherWg.Wait()
-
 	return nil
-
 }

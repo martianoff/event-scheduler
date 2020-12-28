@@ -12,9 +12,8 @@ import (
 )
 
 type ListenerPubsub struct {
-	config       config.Config
-	inboundPool  *goconcurrentqueue.FIFO
-	pubsubClient *pubsub.Client
+	config      config.Config
+	inboundPool *goconcurrentqueue.FIFO
 }
 
 func (l *ListenerPubsub) Boot(config config.Config, inboundPool *goconcurrentqueue.FIFO) error {
