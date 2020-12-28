@@ -23,7 +23,7 @@ Event scheduler can be configured via env vars:
 
 | Env var name | Type | Default Value | Description |
 |--------------|------|---------------|-------------|
-| LOG_FORMAT            | string    | json             | log format output: json or text           |
+| LOG_FORMAT            | string    | text             | log format output: json, text, gcp           |
 | LOG_LEVEL             | string     | info              | log verbosity            |
 | LISTENER_DRIVER             | string     | pubsub              | source (scheduled) messages queue driver          |
 | PUBSUB_LISTENER_PROJECT_ID             | string     |               | source queue pubsub project id            |

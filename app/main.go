@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/caarlos0/env/v6"
+	joonix "github.com/joonix/log"
 	"github.com/maksimru/event-scheduler/config"
 	"github.com/maksimru/event-scheduler/scheduler"
 	"github.com/maksimru/event-scheduler/version"
@@ -34,14 +35,15 @@ func main() {
 }
 
 func setupLogger(config config.Config) {
-
 	log.SetOutput(os.Stdout)
 
-	switch config.LogLevel {
+	switch config.LogFormat {
 	case "json":
 		log.SetFormatter(&log.JSONFormatter{})
 	case "text":
 		log.SetFormatter(&log.TextFormatter{})
+	case "gcp":
+		log.SetFormatter(joonix.NewFormatter())
 	}
 
 	switch config.LogLevel {
@@ -55,10 +57,9 @@ func setupLogger(config config.Config) {
 		log.SetLevel(log.FatalLevel)
 	case "panic":
 		log.SetLevel(log.PanicLevel)
-	case "warn":
+	case "warning":
 		log.SetLevel(log.WarnLevel)
 	case "trace":
 		log.SetLevel(log.TraceLevel)
 	}
-
 }
