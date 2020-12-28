@@ -23,9 +23,10 @@ func (p *Processor) Process() error {
 			if err != nil {
 				log.Error("processor message publish exception: scheduled for ", msg.GetPriority(), " at ", now, " ", err.Error())
 				return err
-			} else {
-				log.Trace("processor message published: scheduled for ", msg.GetPriority(), " at ", now)
 			}
+			log.Trace("processor message published: scheduled for ", msg.GetPriority(), " at ", now)
+		} else {
+			time.Sleep(time.Second)
 		}
 	}
 }
