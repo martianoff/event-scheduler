@@ -125,7 +125,7 @@ func (s *Scheduler) BootPrioritizer() {
 func (s *Scheduler) BootListener() {
 	switch s.config.ListenerDriver {
 	case "pubsub":
-		listenerInstance := new(listenerpubsub.ListenerPubsub)
+		listenerInstance := new(listenerpubsub.PubsubListener)
 		err := listenerInstance.Boot(s.GetConfig(), s.GetInboundPool())
 		if err != nil {
 			panic("exception during listener boot: " + err.Error())

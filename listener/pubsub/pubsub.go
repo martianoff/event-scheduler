@@ -1,4 +1,4 @@
-package listener_pubsub
+package pubsublistener
 
 import (
 	"cloud.google.com/go/pubsub"
@@ -11,32 +11,40 @@ import (
 	"strconv"
 )
 
-type ListenerPubsub struct {
+type PubsubListener struct {
 	config      config.Config
 	inboundPool *goconcurrentqueue.FIFO
+	client      *pubsub.Client
+	context     context.Context
 }
 
-func (l *ListenerPubsub) Boot(config config.Config, inboundPool *goconcurrentqueue.FIFO) error {
+func (l *PubsubListener) Boot(config config.Config, inboundPool *goconcurrentqueue.FIFO) error {
 	l.config = config
 	l.inboundPool = inboundPool
-	return nil
+	ctx := context.Background()
+	client, err := makePubsubClient(ctx, config)
+	l.client, l.context = client, ctx
+	return err
 }
 
-func (l *ListenerPubsub) Listen() error {
-	ctx := context.Background()
-	client, err := pubsub.NewClient(ctx, l.config.PubsubListenerProjectID, option.WithCredentialsFile(l.config.PubsubListenerKeyFile))
+func makePubsubClient(ctx context.Context, config config.Config) (*pubsub.Client, error) {
+	client, err := pubsub.NewClient(ctx, config.PubsubListenerProjectID, option.WithCredentialsFile(config.PubsubListenerKeyFile))
 	if err != nil {
 		log.Error("listener client creation failure: ", err.Error())
-		return err
+		return nil, err
 	}
+	return client, err
+}
+
+func (l *PubsubListener) Listen() error {
 	defer func() {
-		err := client.Close()
+		err := l.client.Close()
 		if err != nil {
 			log.Error("listener client termination failure: ", err.Error())
 		}
 	}()
 
-	sub := client.Subscription(l.config.PubsubListenerSubscriptionID)
+	sub := l.client.Subscription(l.config.PubsubListenerSubscriptionID)
 
 	// Create a channel to handle messages to as they come in.
 	cm := make(chan *pubsub.Message)
@@ -50,18 +58,18 @@ func (l *ListenerPubsub) Listen() error {
 				priority, err := strconv.Atoi(availableAt)
 				if err != nil {
 					log.Error("listener unable to read available_at attribute: ", err.Error())
-				}
-				err = l.inboundPool.Enqueue(priorityqueue.NewStringPrioritizedValue(string(msg.Data), priority))
-				if err != nil {
-					log.Error("listener inbound pool enqueue exception: ", err.Error())
+				} else {
+					err = l.inboundPool.Enqueue(priorityqueue.NewStringPrioritizedValue(string(msg.Data), priority))
+					if err != nil {
+						log.Error("listener inbound pool enqueue exception: ", err.Error())
+					}
 				}
 			}
 			msg.Ack()
 		}
 	}()
 
-	// Receive blocks until the context is cancelled or an error occurs.
-	err = sub.Receive(ctx, func(ctx context.Context, msg *pubsub.Message) {
+	err := sub.Receive(l.context, func(ctx context.Context, msg *pubsub.Message) {
 		cm <- msg
 	})
 
