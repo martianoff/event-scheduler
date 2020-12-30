@@ -24,6 +24,7 @@ func TestPubsubPublisher_Boot(t *testing.T) {
 		outboundPool *goconcurrentqueue.FIFO
 	}
 	type args struct {
+		context      context.Context
 		config       config.Config
 		outboundPool *goconcurrentqueue.FIFO
 	}
@@ -42,6 +43,7 @@ func TestPubsubPublisher_Boot(t *testing.T) {
 				outboundPool: outboundPool,
 			},
 			args: args{
+				context:      context.Background(),
 				config:       cfg,
 				outboundPool: outboundPool,
 			},
@@ -55,9 +57,9 @@ func TestPubsubPublisher_Boot(t *testing.T) {
 				outboundPool: tt.fields.outboundPool,
 			}
 			if !tt.wantErr {
-				assert.NoError(t, p.Boot(tt.args.config, tt.args.outboundPool))
+				assert.NoError(t, p.Boot(tt.args.context, tt.args.config, tt.args.outboundPool))
 			} else {
-				assert.Error(t, p.Boot(tt.args.config, tt.args.outboundPool))
+				assert.Error(t, p.Boot(tt.args.context, tt.args.config, tt.args.outboundPool))
 			}
 		})
 	}

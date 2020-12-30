@@ -24,6 +24,7 @@ func TestListenerPubsub_Boot(t *testing.T) {
 		inboundPool *goconcurrentqueue.FIFO
 	}
 	type args struct {
+		context     context.Context
 		config      config.Config
 		inboundPool *goconcurrentqueue.FIFO
 	}
@@ -42,6 +43,7 @@ func TestListenerPubsub_Boot(t *testing.T) {
 				inboundPool: inboundPool,
 			},
 			args: args{
+				context:     context.Background(),
 				config:      cfg,
 				inboundPool: inboundPool,
 			},
@@ -55,9 +57,9 @@ func TestListenerPubsub_Boot(t *testing.T) {
 				inboundPool: tt.fields.inboundPool,
 			}
 			if !tt.wantErr {
-				assert.NoError(t, l.Boot(tt.args.config, tt.args.inboundPool))
+				assert.NoError(t, l.Boot(tt.args.context, tt.args.config, tt.args.inboundPool))
 			} else {
-				assert.Error(t, l.Boot(tt.args.config, tt.args.inboundPool))
+				assert.Error(t, l.Boot(tt.args.context, tt.args.config, tt.args.inboundPool))
 			}
 		})
 	}

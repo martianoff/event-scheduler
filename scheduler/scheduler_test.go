@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"context"
 	"github.com/enriquebris/goconcurrentqueue"
 	"github.com/maksimru/event-scheduler/config"
 	"github.com/maksimru/event-scheduler/listener"
@@ -131,9 +132,13 @@ func TestScheduler_BootListener(t *testing.T) {
 				outboundPool: tt.fields.outboundPool,
 			}
 			if !tt.wantPanic {
-				assert.NotPanics(t, s.BootListener)
+				assert.NotPanics(t, func() {
+					s.BootListener(context.Background())
+				})
 			} else {
-				assert.Panics(t, s.BootListener)
+				assert.Panics(t, func() {
+					s.BootListener(context.Background())
+				})
 			}
 		})
 	}
@@ -183,9 +188,13 @@ func TestScheduler_BootPrioritizer(t *testing.T) {
 				outboundPool: tt.fields.outboundPool,
 			}
 			if !tt.wantPanic {
-				assert.NotPanics(t, s.BootPrioritizer)
+				assert.NotPanics(t, func() {
+					s.BootPrioritizer(context.Background())
+				})
 			} else {
-				assert.Panics(t, s.BootPrioritizer)
+				assert.Panics(t, func() {
+					s.BootPrioritizer(context.Background())
+				})
 			}
 		})
 	}
@@ -235,9 +244,13 @@ func TestScheduler_BootProcessor(t *testing.T) {
 				outboundPool: tt.fields.outboundPool,
 			}
 			if !tt.wantPanic {
-				assert.NotPanics(t, s.BootProcessor)
+				assert.NotPanics(t, func() {
+					s.BootProcessor(context.Background())
+				})
 			} else {
-				assert.Panics(t, s.BootProcessor)
+				assert.Panics(t, func() {
+					s.BootProcessor(context.Background())
+				})
 			}
 		})
 	}
@@ -323,9 +336,13 @@ func TestScheduler_BootPublisher(t *testing.T) {
 				outboundPool: tt.fields.outboundPool,
 			}
 			if !tt.wantPanic {
-				assert.NotPanics(t, s.BootPublisher)
+				assert.NotPanics(t, func() {
+					s.BootPublisher(context.Background())
+				})
 			} else {
-				assert.Panics(t, s.BootPublisher)
+				assert.Panics(t, func() {
+					s.BootPublisher(context.Background())
+				})
 			}
 		})
 	}

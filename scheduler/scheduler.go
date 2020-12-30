@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"context"
 	"github.com/enriquebris/goconcurrentqueue"
 	"github.com/maksimru/event-scheduler/config"
 	"github.com/maksimru/event-scheduler/listener"
@@ -45,11 +46,11 @@ func NewScheduler(config config.Config) *Scheduler {
 	return scheduler
 }
 
-func (s *Scheduler) Run() error {
-	s.BootPublisher()
-	s.BootPrioritizer()
-	s.BootListener()
-	s.BootProcessor()
+func (s *Scheduler) Run(ctx context.Context) error {
+	s.BootPublisher(ctx)
+	s.BootPrioritizer(ctx)
+	s.BootListener(ctx)
+	s.BootProcessor(ctx)
 
 	var wg sync.WaitGroup
 
@@ -102,9 +103,9 @@ func (s *Scheduler) Run() error {
 	return nil
 }
 
-func (s *Scheduler) BootProcessor() {
+func (s *Scheduler) BootProcessor(ctx context.Context) {
 	processorInstance := new(processor.Processor)
-	err := (*processorInstance).Boot(s.publisher, s.GetDataStorage())
+	err := (*processorInstance).Boot(ctx, s.publisher, s.GetDataStorage())
 	if err != nil {
 		panic("exception during processor boot: " + err.Error())
 	}
@@ -112,9 +113,9 @@ func (s *Scheduler) BootProcessor() {
 	log.Info("processor boot is finished")
 }
 
-func (s *Scheduler) BootPrioritizer() {
+func (s *Scheduler) BootPrioritizer(ctx context.Context) {
 	prioritizerInstance := new(prioritizer.Prioritizer)
-	err := (*prioritizerInstance).Boot(s.GetInboundPool(), s.GetDataStorage())
+	err := (*prioritizerInstance).Boot(ctx, s.GetInboundPool(), s.GetDataStorage())
 	if err != nil {
 		panic("exception during prioritizer boot: " + err.Error())
 	}
@@ -122,11 +123,11 @@ func (s *Scheduler) BootPrioritizer() {
 	log.Info("prioritizer boot is finished")
 }
 
-func (s *Scheduler) BootListener() {
+func (s *Scheduler) BootListener(ctx context.Context) {
 	switch s.config.ListenerDriver {
 	case "pubsub":
 		listenerInstance := new(listenerpubsub.PubsubListener)
-		err := listenerInstance.Boot(s.GetConfig(), s.GetInboundPool())
+		err := listenerInstance.Boot(ctx, s.GetConfig(), s.GetInboundPool())
 		if err != nil {
 			panic("exception during listener boot: " + err.Error())
 		}
@@ -137,11 +138,11 @@ func (s *Scheduler) BootListener() {
 	log.Info("listener boot is finished")
 }
 
-func (s *Scheduler) BootPublisher() {
+func (s *Scheduler) BootPublisher(ctx context.Context) {
 	switch s.config.PublisherDriver {
 	case "pubsub":
 		publisherInstance := new(publisherpubsub.PubsubPublisher)
-		err := publisherInstance.Boot(s.GetConfig(), s.GetOutboundPool())
+		err := publisherInstance.Boot(ctx, s.GetConfig(), s.GetOutboundPool())
 		if err != nil {
 			panic("exception during publisher boot: " + err.Error())
 		}

@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"context"
 	"github.com/maksimru/event-scheduler/message"
 	"github.com/maksimru/event-scheduler/publisher"
 	"github.com/maksimru/event-scheduler/storage"
@@ -11,10 +12,16 @@ import (
 type Processor struct {
 	publisher   publisher.Publisher
 	dataStorage *storage.PqStorage
+	context     context.Context
 }
 
 func (p *Processor) Process() error {
 	for {
+		select {
+		case <-p.context.Done():
+			return nil
+		default:
+		}
 		now := int(time.Now().Unix())
 		if p.dataStorage.CheckScheduled(now) {
 			msg := p.dataStorage.Dequeue()
@@ -31,7 +38,8 @@ func (p *Processor) Process() error {
 	}
 }
 
-func (p *Processor) Boot(publisher publisher.Publisher, dataStorage *storage.PqStorage) error {
+func (p *Processor) Boot(ctx context.Context, publisher publisher.Publisher, dataStorage *storage.PqStorage) error {
+	p.context = ctx
 	p.publisher = publisher
 	p.dataStorage = dataStorage
 	return nil

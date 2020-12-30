@@ -1,6 +1,7 @@
 package prioritizer
 
 import (
+	"context"
 	"github.com/enriquebris/goconcurrentqueue"
 	"github.com/maksimru/event-scheduler/storage"
 	"github.com/stretchr/testify/assert"
@@ -15,6 +16,7 @@ func TestPrioritizer_Boot(t *testing.T) {
 	type args struct {
 		inboundPool *goconcurrentqueue.FIFO
 		dataStorage *storage.PqStorage
+		context     context.Context
 	}
 	inboundPool := goconcurrentqueue.NewFIFO()
 	dataStorage := storage.NewPqStorage()
@@ -33,6 +35,7 @@ func TestPrioritizer_Boot(t *testing.T) {
 			args: args{
 				inboundPool: inboundPool,
 				dataStorage: dataStorage,
+				context:     context.Background(),
 			},
 			wantErr: false,
 		},
@@ -44,9 +47,9 @@ func TestPrioritizer_Boot(t *testing.T) {
 				dataStorage: tt.fields.dataStorage,
 			}
 			if !tt.wantErr {
-				assert.NoError(t, p.Boot(tt.args.inboundPool, tt.args.dataStorage))
+				assert.NoError(t, p.Boot(tt.args.context, tt.args.inboundPool, tt.args.dataStorage))
 			} else {
-				assert.Error(t, p.Boot(tt.args.inboundPool, tt.args.dataStorage))
+				assert.Error(t, p.Boot(tt.args.context, tt.args.inboundPool, tt.args.dataStorage))
 			}
 		})
 	}

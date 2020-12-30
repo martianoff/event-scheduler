@@ -18,10 +18,9 @@ type PubsubListener struct {
 	context     context.Context
 }
 
-func (l *PubsubListener) Boot(config config.Config, inboundPool *goconcurrentqueue.FIFO) error {
+func (l *PubsubListener) Boot(ctx context.Context, config config.Config, inboundPool *goconcurrentqueue.FIFO) error {
 	l.config = config
 	l.inboundPool = inboundPool
-	ctx := context.Background()
 	client, err := makePubsubClient(ctx, config)
 	l.client, l.context = client, ctx
 	return err

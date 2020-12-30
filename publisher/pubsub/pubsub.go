@@ -22,10 +22,9 @@ type PubsubPublisher struct {
 	context      context.Context
 }
 
-func (p *PubsubPublisher) Boot(config config.Config, outboundPool *goconcurrentqueue.FIFO) error {
+func (p *PubsubPublisher) Boot(ctx context.Context, config config.Config, outboundPool *goconcurrentqueue.FIFO) error {
 	p.config = config
 	p.outboundPool = outboundPool
-	ctx := context.Background()
 	client, err := makePubsubClient(ctx, config)
 	p.client, p.context = client, ctx
 	return err

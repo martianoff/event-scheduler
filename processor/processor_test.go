@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"context"
 	"github.com/maksimru/event-scheduler/publisher"
 	publisherpubsub "github.com/maksimru/event-scheduler/publisher/pubsub"
 	"github.com/maksimru/event-scheduler/storage"
@@ -16,6 +17,7 @@ func TestProcessor_Boot(t *testing.T) {
 	type args struct {
 		publisher   publisher.Publisher
 		dataStorage *storage.PqStorage
+		context     context.Context
 	}
 	publisherProvider := new(publisherpubsub.PubsubPublisher)
 	dataStorage := storage.NewPqStorage()
@@ -34,6 +36,7 @@ func TestProcessor_Boot(t *testing.T) {
 			args: args{
 				publisher:   publisherProvider,
 				dataStorage: dataStorage,
+				context:     context.Background(),
 			},
 			wantErr: false,
 		},
@@ -45,9 +48,9 @@ func TestProcessor_Boot(t *testing.T) {
 				dataStorage: tt.fields.dataStorage,
 			}
 			if !tt.wantErr {
-				assert.NoError(t, p.Boot(tt.args.publisher, tt.args.dataStorage))
+				assert.NoError(t, p.Boot(tt.args.context, tt.args.publisher, tt.args.dataStorage))
 			} else {
-				assert.Error(t, p.Boot(tt.args.publisher, tt.args.dataStorage))
+				assert.Error(t, p.Boot(tt.args.context, tt.args.publisher, tt.args.dataStorage))
 			}
 		})
 	}
