@@ -10,7 +10,9 @@ import (
 	"github.com/maksimru/event-scheduler/publisher"
 	"github.com/maksimru/event-scheduler/storage"
 	"github.com/stretchr/testify/assert"
+	"path"
 	"reflect"
+	"runtime"
 	"testing"
 )
 
@@ -52,6 +54,12 @@ func TestNewScheduler(t *testing.T) {
 	}
 }
 
+func getProjectPath() string {
+	_, filename, _, _ := runtime.Caller(0)
+	dir := path.Join(path.Dir(filename), "../..")
+	return dir
+}
+
 func TestScheduler_BootListener(t *testing.T) {
 	type fields struct {
 		config       config.Config
@@ -63,6 +71,7 @@ func TestScheduler_BootListener(t *testing.T) {
 		inboundPool  *goconcurrentqueue.FIFO
 		outboundPool *goconcurrentqueue.FIFO
 	}
+	dir := getProjectPath()
 	tests := []struct {
 		name      string
 		fields    fields
@@ -97,16 +106,9 @@ func TestScheduler_BootListener(t *testing.T) {
 			name: "Check listener boot with pubsub driver",
 			fields: fields{
 				config: config.Config{
-					LogFormat:                    "",
-					LogLevel:                     "",
-					ListenerDriver:               "pubsub",
-					PubsubListenerProjectID:      "",
-					PubsubListenerSubscriptionID: "",
-					PubsubListenerKeyFile:        "",
-					PublisherDriver:              "",
-					PubsubPublisherProjectID:     "",
-					PubsubPublisherTopicID:       "",
-					PubsubPublisherKeyFile:       "",
+					ListenerDriver:          "pubsub",
+					PubsubListenerProjectID: "testProjectId",
+					PubsubListenerKeyFile:   dir + "/tests/pubsub_cred_mock.json",
 				},
 				listener:     nil,
 				publisher:    nil,
@@ -267,6 +269,7 @@ func TestScheduler_BootPublisher(t *testing.T) {
 		inboundPool  *goconcurrentqueue.FIFO
 		outboundPool *goconcurrentqueue.FIFO
 	}
+	dir := getProjectPath()
 	tests := []struct {
 		name      string
 		fields    fields
@@ -301,16 +304,9 @@ func TestScheduler_BootPublisher(t *testing.T) {
 			name: "Check publisher boot with proper configuration",
 			fields: fields{
 				config: config.Config{
-					LogFormat:                    "",
-					LogLevel:                     "",
-					ListenerDriver:               "",
-					PubsubListenerProjectID:      "",
-					PubsubListenerSubscriptionID: "",
-					PubsubListenerKeyFile:        "",
-					PublisherDriver:              "pubsub",
-					PubsubPublisherProjectID:     "",
-					PubsubPublisherTopicID:       "",
-					PubsubPublisherKeyFile:       "",
+					PublisherDriver:          "pubsub",
+					PubsubPublisherProjectID: "testProjectId",
+					PubsubPublisherKeyFile:   dir + "/tests/pubsub_cred_mock.json",
 				},
 				listener:     nil,
 				publisher:    nil,
