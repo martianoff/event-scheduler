@@ -13,6 +13,26 @@ type Processor struct {
 	publisher   publisher.Publisher
 	dataStorage *storage.PqStorage
 	context     context.Context
+	time        CurrentTimeChecker
+}
+
+type CurrentTimeChecker interface {
+	Now() time.Time
+}
+
+type RealTime struct {
+}
+
+func (RealTime) Now() time.Time {
+	return time.Now()
+}
+
+type mockTime struct {
+	time time.Time
+}
+
+func (m mockTime) Now() time.Time {
+	return m.time
 }
 
 func (p *Processor) Process() error {
@@ -22,7 +42,7 @@ func (p *Processor) Process() error {
 			return nil
 		default:
 		}
-		now := int(time.Now().Unix())
+		now := int(p.time.Now().Unix())
 		if p.dataStorage.CheckScheduled(now) {
 			msg := p.dataStorage.Dequeue()
 			log.Trace("processor message is ready for delivery: scheduled for ", msg.GetPriority(), " at ", now)
@@ -42,5 +62,6 @@ func (p *Processor) Boot(ctx context.Context, publisher publisher.Publisher, dat
 	p.context = ctx
 	p.publisher = publisher
 	p.dataStorage = dataStorage
+	p.time = RealTime{}
 	return nil
 }

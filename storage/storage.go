@@ -50,6 +50,10 @@ func (p *PqStorage) Enqueue(value priorityqueue.PrioritizedValue) {
 	p.mutex.Unlock()
 }
 
+func (p *PqStorage) IsEmpty() bool {
+	return p.dataStorage.IsEmpty()
+}
+
 func (p *PqStorage) CheckScheduled(nowTimestamp int) bool {
 	if p.dataStorage.Top() == nil {
 		return false
