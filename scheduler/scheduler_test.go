@@ -56,7 +56,7 @@ func TestNewScheduler(t *testing.T) {
 
 func getProjectPath() string {
 	_, filename, _, _ := runtime.Caller(0)
-	dir := path.Join(path.Dir(filename), "../..")
+	dir := path.Join(path.Dir(filename), "..")
 	return dir
 }
 
