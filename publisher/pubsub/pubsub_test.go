@@ -145,16 +145,8 @@ func Test_makePubsubClient(t *testing.T) {
 			args: args{
 				ctx: context.Background(),
 				config: config.Config{
-					LogFormat:                    "",
-					LogLevel:                     "",
-					ListenerDriver:               "",
-					PubsubListenerProjectID:      "",
-					PubsubListenerSubscriptionID: "",
-					PubsubListenerKeyFile:        "",
-					PublisherDriver:              "",
-					PubsubPublisherProjectID:     "testProjectId",
-					PubsubPublisherTopicID:       "",
-					PubsubPublisherKeyFile:       dir + "/tests/pubsub_cred_mock.json",
+					PubsubPublisherProjectID: "testProjectId",
+					PubsubPublisherKeyFile:   dir + "/tests/pubsub_cred_mock.json",
 				},
 			},
 			wantErr: false,
