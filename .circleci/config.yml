@@ -11,7 +11,7 @@ jobs:
       - go/test:
           covermode: atomic
           failfast: true
-          race: true
+          race: false
           coverprofile: coverage.txt
       - run:
           name: Coverage Report

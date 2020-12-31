@@ -1,7 +1,7 @@
 package config
 
 type Config struct {
-	LogFormat                    string `env:"LOG_FORMAT" envDefault:"json"`
+	LogFormat                    string `env:"LOG_FORMAT" envDefault:"text"`
 	LogLevel                     string `env:"LOG_LEVEL" envDefault:"info"`
 	ListenerDriver               string `env:"LISTENER_DRIVER" envDefault:"pubsub"`
 	PubsubListenerProjectID      string `env:"PUBSUB_LISTENER_PROJECT_ID"`

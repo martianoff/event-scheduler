@@ -44,10 +44,14 @@ func (p *PqStorage) Dequeue() priorityqueue.StringPrioritizedValue {
 	return value.(priorityqueue.StringPrioritizedValue)
 }
 
-func (p *PqStorage) Enqueue(value priorityqueue.StringPrioritizedValue) {
+func (p *PqStorage) Enqueue(value priorityqueue.PrioritizedValue) {
 	p.mutex.Lock()
 	p.dataStorage.Enqueue(value)
 	p.mutex.Unlock()
+}
+
+func (p *PqStorage) IsEmpty() bool {
+	return p.dataStorage.IsEmpty()
 }
 
 func (p *PqStorage) CheckScheduled(nowTimestamp int) bool {

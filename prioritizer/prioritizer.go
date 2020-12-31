@@ -1,6 +1,7 @@
 package prioritizer
 
 import (
+	"context"
 	"github.com/enriquebris/goconcurrentqueue"
 	"github.com/maksimru/event-scheduler/storage"
 	"github.com/maksimru/go-hpds/priorityqueue"
@@ -11,10 +12,16 @@ import (
 type Prioritizer struct {
 	inboundPool *goconcurrentqueue.FIFO
 	dataStorage *storage.PqStorage
+	context     context.Context
 }
 
 func (p *Prioritizer) Process() error {
 	for {
+		select {
+		case <-p.context.Done():
+			return nil
+		default:
+		}
 		if p.inboundPool.GetLen() == 0 {
 			log.Trace("prioritizer queue is empty")
 			time.Sleep(time.Second)
@@ -27,7 +34,8 @@ func (p *Prioritizer) Process() error {
 	}
 }
 
-func (p *Prioritizer) Boot(inboundPool *goconcurrentqueue.FIFO, dataStorage *storage.PqStorage) error {
+func (p *Prioritizer) Boot(ctx context.Context, inboundPool *goconcurrentqueue.FIFO, dataStorage *storage.PqStorage) error {
+	p.context = ctx
 	p.inboundPool = inboundPool
 	p.dataStorage = dataStorage
 	return nil

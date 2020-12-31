@@ -1,4 +1,4 @@
-package publisher_pubsub
+package pubsubpublisher
 
 import (
 	"cloud.google.com/go/pubsub"
@@ -18,13 +18,25 @@ const DispatcherThreads = 5
 type PubsubPublisher struct {
 	config       config.Config
 	outboundPool *goconcurrentqueue.FIFO
-	pubsubClient *pubsub.Client
+	client       *pubsub.Client
+	context      context.Context
 }
 
-func (p *PubsubPublisher) Boot(config config.Config, outboundPool *goconcurrentqueue.FIFO) error {
+func (p *PubsubPublisher) Boot(ctx context.Context, config config.Config, outboundPool *goconcurrentqueue.FIFO) error {
 	p.config = config
 	p.outboundPool = outboundPool
-	return nil
+	client, err := makePubsubClient(ctx, config)
+	p.client, p.context = client, ctx
+	return err
+}
+
+func makePubsubClient(ctx context.Context, config config.Config) (*pubsub.Client, error) {
+	client, err := pubsub.NewClient(ctx, config.PubsubPublisherProjectID, option.WithCredentialsFile(config.PubsubPublisherKeyFile))
+	if err != nil {
+		log.Error("publisher client creation failure: ", err.Error())
+		return nil, err
+	}
+	return client, err
 }
 
 func (p *PubsubPublisher) Push(msg message.Message) error {
@@ -39,27 +51,30 @@ func (p *PubsubPublisher) Push(msg message.Message) error {
 }
 
 func (p PubsubPublisher) Dispatch() error {
-	ctx := context.Background()
-	client, err := pubsub.NewClient(ctx, p.config.PubsubPublisherProjectID, option.WithCredentialsFile(p.config.PubsubPublisherKeyFile))
-	if err != nil {
-		log.Error("publisher client creation failure: ", err.Error())
-		return err
-	}
+	defer func() {
+		err := p.client.Close()
+		if err != nil {
+			log.Error("publisher client termination failure: ", err.Error())
+		}
+	}()
 
 	var totalErrors uint64
 
-	t := client.Topic(p.config.PubsubPublisherTopicID)
+	t := p.client.Topic(p.config.PubsubPublisherTopicID)
 
 	var dispatcherWg sync.WaitGroup
-
-	for threadId := 0; threadId < DispatcherThreads; threadId++ {
-
+	for threadID := 0; threadID < DispatcherThreads; threadID++ {
 		dispatcherWg.Add(1)
 
 		go func(threadId int) {
 			defer dispatcherWg.Done()
 
 			for {
+				select {
+				case <-p.context.Done():
+					return
+				default:
+				}
 
 				if p.outboundPool.GetLen() == 0 {
 					log.Tracef("publisher queue is empty, thread (%v)", threadId)
@@ -71,7 +86,7 @@ func (p PubsubPublisher) Dispatch() error {
 				msg := v.(message.Message)
 				log.Tracef("publisher dequeued element, thread (%v): %v", threadId, msg.GetBody())
 
-				result := t.Publish(ctx, &pubsub.Message{
+				result := t.Publish(p.context, &pubsub.Message{
 					Data: []byte(msg.GetBody().(string)),
 				})
 
@@ -80,7 +95,7 @@ func (p PubsubPublisher) Dispatch() error {
 
 				go func(threadId int, res *pubsub.PublishResult, attemptedMessage message.Message) {
 					defer wg.Done()
-					id, err := res.Get(ctx)
+					id, err := res.Get(p.context)
 					if err != nil {
 						// Error handling code can be added here.
 						log.Warnf("publisher message delivery exception, thread (%v): %v", threadId, err.Error())
@@ -96,17 +111,10 @@ func (p PubsubPublisher) Dispatch() error {
 					}
 					log.Tracef("publisher message published, thread (%v): %v", threadId, id)
 				}(threadId, result, msg)
-
 				wg.Wait()
-
 			}
-
-		}(threadId)
-
+		}(threadID)
 	}
-
 	dispatcherWg.Wait()
-
 	return nil
-
 }
