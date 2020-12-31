@@ -28,7 +28,10 @@ func TestPubsubPublisher_Boot(t *testing.T) {
 		config       config.Config
 		outboundPool *goconcurrentqueue.FIFO
 	}
-	cfg := config.Config{}
+	dir := getProjectPath()
+	cfg := config.Config{
+		PubsubPublisherKeyFile: dir + "/tests/pubsub_cred_mock.json",
+	}
 	outboundPool := goconcurrentqueue.NewFIFO()
 	tests := []struct {
 		name    string

@@ -28,7 +28,10 @@ func TestListenerPubsub_Boot(t *testing.T) {
 		config      config.Config
 		inboundPool *goconcurrentqueue.FIFO
 	}
-	cfg := config.Config{}
+	dir := getProjectPath()
+	cfg := config.Config{
+		PubsubListenerKeyFile: dir + "/tests/pubsub_cred_mock.json",
+	}
 	inboundPool := goconcurrentqueue.NewFIFO()
 	tests := []struct {
 		name    string
