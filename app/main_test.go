@@ -7,7 +7,9 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"os"
+	"path"
 	"reflect"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -109,7 +111,14 @@ func Test_setupLogger(t *testing.T) {
 	}
 }
 
+func getProjectPath() string {
+	_, filename, _, _ := runtime.Caller(0)
+	dir := path.Join(path.Dir(filename), "..")
+	return dir
+}
+
 func TestMainFunc(t *testing.T) {
+	dir := getProjectPath()
 	tests := []struct {
 		name         string
 		expectedExit int
@@ -118,7 +127,12 @@ func TestMainFunc(t *testing.T) {
 		{
 			name:         "Test wrongly configured application launch",
 			expectedExit: 1,
-			env:          make(map[string]string, 0),
+			env: map[string]string{
+				"LISTENER_DRIVER":           "pubsub",
+				"PUBLISHER_DRIVER":          "pubsub",
+				"PUBSUB_LISTENER_KEY_FILE":  dir + "/tests/pubsub_cred_mock.json",
+				"PUBSUB_PUBLISHER_KEY_FILE": dir + "/tests/pubsub_cred_mock.json",
+			},
 		},
 		{
 			name:         "Test correctly configured application launch",
