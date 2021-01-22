@@ -16,6 +16,10 @@ type Processor struct {
 	time        CurrentTimeChecker
 }
 
+func (p *Processor) SetTime(time CurrentTimeChecker) {
+	p.time = time
+}
+
 type CurrentTimeChecker interface {
 	Now() time.Time
 }
@@ -27,11 +31,15 @@ func (RealTime) Now() time.Time {
 	return time.Now()
 }
 
-type mockTime struct {
+type MockTime struct {
 	time time.Time
 }
 
-func (m mockTime) Now() time.Time {
+func NewMockTime(time time.Time) MockTime {
+	return MockTime{time: time}
+}
+
+func (m MockTime) Now() time.Time {
 	return m.time
 }
 
@@ -39,6 +47,7 @@ func (p *Processor) Process() error {
 	for {
 		select {
 		case <-p.context.Done():
+			log.Warn("processor is stopped")
 			return nil
 		default:
 		}

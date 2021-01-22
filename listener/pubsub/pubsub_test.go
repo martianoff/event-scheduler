@@ -1,4 +1,4 @@
-package pubsublistener
+package pubsub
 
 import (
 	"cloud.google.com/go/pubsub"
@@ -56,7 +56,7 @@ func TestListenerPubsub_Boot(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			l := &PubsubListener{
+			l := &Listener{
 				config:      tt.fields.config,
 				inboundPool: tt.fields.inboundPool,
 			}
@@ -212,7 +212,7 @@ func TestListenerPubsub_Listen(t *testing.T) {
 			defer pubsubServerConn.Close()
 			pubsubClient, topic := mockPubsubClient(ctx, t, pubsubServerConn, cfg)
 
-			l := &PubsubListener{
+			l := &Listener{
 				config:      cfg,
 				inboundPool: tt.fields.inboundPool,
 				client:      pubsubClient,
