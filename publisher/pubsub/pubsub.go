@@ -1,4 +1,4 @@
-package pubsubpublisher
+package pubsub
 
 import (
 	"cloud.google.com/go/pubsub"
@@ -15,14 +15,14 @@ import (
 
 const DispatcherThreads = 5
 
-type PubsubPublisher struct {
+type Publisher struct {
 	config       config.Config
 	outboundPool *goconcurrentqueue.FIFO
 	client       *pubsub.Client
 	context      context.Context
 }
 
-func (p *PubsubPublisher) Boot(ctx context.Context, config config.Config, outboundPool *goconcurrentqueue.FIFO) error {
+func (p *Publisher) Boot(ctx context.Context, config config.Config, outboundPool *goconcurrentqueue.FIFO) error {
 	p.config = config
 	p.outboundPool = outboundPool
 	client, err := makePubsubClient(ctx, config)
@@ -30,16 +30,20 @@ func (p *PubsubPublisher) Boot(ctx context.Context, config config.Config, outbou
 	return err
 }
 
+func (p *Publisher) SetPubsubClient(client *pubsub.Client) {
+	p.client = client
+}
+
 func makePubsubClient(ctx context.Context, config config.Config) (*pubsub.Client, error) {
 	client, err := pubsub.NewClient(ctx, config.PubsubPublisherProjectID, option.WithCredentialsFile(config.PubsubPublisherKeyFile))
 	if err != nil {
-		log.Error("publisher client creation failure: ", err.Error())
+		log.Error("publisher client boot failure: ", err.Error())
 		return nil, err
 	}
 	return client, err
 }
 
-func (p *PubsubPublisher) Push(msg message.Message) error {
+func (p *Publisher) Push(msg message.Message) error {
 	err := p.outboundPool.Enqueue(msg)
 
 	if err != nil {
@@ -50,7 +54,7 @@ func (p *PubsubPublisher) Push(msg message.Message) error {
 	return nil
 }
 
-func (p PubsubPublisher) Dispatch() error {
+func (p Publisher) Dispatch() error {
 	defer func() {
 		err := p.client.Close()
 		if err != nil {
@@ -72,6 +76,7 @@ func (p PubsubPublisher) Dispatch() error {
 			for {
 				select {
 				case <-p.context.Done():
+					log.Warn("publisher is stopped")
 					return
 				default:
 				}

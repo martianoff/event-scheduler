@@ -55,10 +55,13 @@ func (p *PqStorage) IsEmpty() bool {
 }
 
 func (p *PqStorage) CheckScheduled(nowTimestamp int) bool {
-	if p.dataStorage.Top() == nil {
+	p.mutex.Lock()
+	top := p.dataStorage.Top()
+	p.mutex.Unlock()
+	if top == nil {
 		return false
 	}
-	earliestScheduledTimestamp := p.dataStorage.Top().GetPriority()
+	earliestScheduledTimestamp := top.GetPriority()
 	match := earliestScheduledTimestamp <= nowTimestamp
 	return match
 }

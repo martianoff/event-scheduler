@@ -6,7 +6,7 @@ import (
 	"github.com/maksimru/event-scheduler/config"
 	"github.com/maksimru/event-scheduler/message"
 	"github.com/maksimru/event-scheduler/publisher"
-	publisherpubsub "github.com/maksimru/event-scheduler/publisher/pubsub"
+	"github.com/maksimru/event-scheduler/publisher/pubsub"
 	"github.com/maksimru/event-scheduler/storage"
 	"github.com/maksimru/go-hpds/priorityqueue"
 	"github.com/stretchr/testify/assert"
@@ -25,7 +25,7 @@ func TestProcessor_Boot(t *testing.T) {
 		dataStorage *storage.PqStorage
 		context     context.Context
 	}
-	publisherProvider := new(publisherpubsub.PubsubPublisher)
+	publisherProvider := new(pubsub.Publisher)
 	dataStorage := storage.NewPqStorage()
 	tests := []struct {
 		name    string
@@ -104,7 +104,7 @@ func TestProcessor_Process(t *testing.T) {
 			name: "Check prioritizer don't move messages if they are not ready for dispatch",
 			fields: fields{
 				dataStorage: storage.NewPqStorage(),
-				time:        mockTime{time: time.Unix(0, 0)}, // simulate 0 timestamp
+				time:        NewMockTime(time.Unix(0, 0)), // simulate 0 timestamp
 			},
 			storageData: []priorityqueue.StringPrioritizedValue{
 				priorityqueue.NewStringPrioritizedValue("msg2", 400),
@@ -127,7 +127,7 @@ func TestProcessor_Process(t *testing.T) {
 			name: "Check prioritizer can partially dispatch prepared messages on time",
 			fields: fields{
 				dataStorage: storage.NewPqStorage(),
-				time:        mockTime{time: time.Unix(600, 0)}, // simulate 600 timestamp
+				time:        NewMockTime(time.Unix(600, 0)), // simulate 600 timestamp
 			},
 			storageData: []priorityqueue.StringPrioritizedValue{
 				priorityqueue.NewStringPrioritizedValue("msg2", 400),
@@ -155,7 +155,7 @@ func TestProcessor_Process(t *testing.T) {
 			defer cancel()
 
 			outboundQueue := goconcurrentqueue.NewFIFO()
-			publisherInstance := new(publisherpubsub.PubsubPublisher)
+			publisherInstance := new(pubsub.Publisher)
 			publisherInstance.Boot(ctx, config.Config{}, outboundQueue)
 
 			p := &Processor{

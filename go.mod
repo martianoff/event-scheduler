@@ -7,11 +7,13 @@ require (
 	cloud.google.com/go/pubsub v1.9.1
 	github.com/caarlos0/env/v6 v6.4.0
 	github.com/enriquebris/goconcurrentqueue v0.6.0
+	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
 	github.com/joonix/log v0.0.0-20200409080653-9c1d2ceb5f1d
 	github.com/maksimru/go-hpds v1.9.1
 	github.com/sirupsen/logrus v1.7.0
 	github.com/stretchr/testify v1.6.1
 	golang.org/x/net v0.0.0-20201224014010-6772e930b67b // indirect
+	golang.org/x/sync v0.0.0-20201207232520-09787c993a3a
 	golang.org/x/sys v0.0.0-20201223074533-0d417f636930 // indirect
 	golang.org/x/tools v0.0.0-20201224043029-2b0845dc783e // indirect
 	google.golang.org/api v0.36.0
