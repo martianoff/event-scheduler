@@ -121,7 +121,7 @@ func TestPrioritizer_Process(t *testing.T) {
 
 			// insert requested input
 			for _, msg := range tt.inboundMsgs {
-				p.inboundPool.Enqueue(msg)
+				_ = p.inboundPool.Enqueue(msg)
 			}
 
 			// execute prioritizer
@@ -134,7 +134,7 @@ func TestPrioritizer_Process(t *testing.T) {
 			assert.Equal(t, 0, p.inboundPool.GetLen())
 
 			// validate results
-			got := []priorityqueue.StringPrioritizedValue{}
+			var got []priorityqueue.StringPrioritizedValue
 			for !p.dataStorage.IsEmpty() {
 				got = append(got, p.dataStorage.Dequeue())
 			}
