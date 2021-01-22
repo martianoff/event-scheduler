@@ -1,12 +1,17 @@
 package main
 
 import (
+	"context"
 	joonix "github.com/joonix/log"
 	"github.com/maksimru/event-scheduler/config"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
+	"os"
+	"path"
 	"reflect"
+	"runtime"
 	"testing"
+	"time"
 )
 
 func Test_setupLogger(t *testing.T) {
@@ -102,6 +107,52 @@ func Test_setupLogger(t *testing.T) {
 			setupLogger(tt.args.config)
 			assert.Equal(t, tt.wantLevel, log.GetLevel().String())
 			assert.Equal(t, reflect.TypeOf(tt.wantFormat), reflect.TypeOf(log.StandardLogger().Formatter))
+		})
+	}
+}
+
+func getProjectPath() string {
+	_, filename, _, _ := runtime.Caller(0)
+	dir := path.Join(path.Dir(filename), "..")
+	return dir
+}
+
+func TestMainFunc(t *testing.T) {
+	dir := getProjectPath()
+	tests := []struct {
+		name         string
+		expectedExit int
+		env          map[string]string
+	}{
+		{
+			name:         "Test wrongly configured application launch",
+			expectedExit: 1,
+			env: map[string]string{
+				"LISTENER_DRIVER":           "pubsub",
+				"PUBLISHER_DRIVER":          "pubsub",
+				"PUBSUB_LISTENER_KEY_FILE":  dir + "/tests/pubsub_cred_mock.json",
+				"PUBSUB_PUBLISHER_KEY_FILE": dir + "/tests/pubsub_cred_mock.json",
+			},
+		},
+		{
+			name:         "Test correctly configured application launch",
+			expectedExit: 0,
+			env: map[string]string{
+				"LISTENER_DRIVER":  "test",
+				"PUBLISHER_DRIVER": "test",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			ctx, cancel := context.WithTimeout(ctx, time.Second*1)
+			defer cancel()
+			// mock env vars
+			for k, v := range tt.env {
+				os.Setenv(k, v)
+			}
+			assert.Equal(t, tt.expectedExit, app(ctx))
 		})
 	}
 }

@@ -1,4 +1,4 @@
-package pubsubpublisher
+package pubsub
 
 import (
 	"cloud.google.com/go/pubsub"
@@ -55,7 +55,7 @@ func TestPubsubPublisher_Boot(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &PubsubPublisher{
+			p := &Publisher{
 				config:       tt.fields.config,
 				outboundPool: tt.fields.outboundPool,
 			}
@@ -109,7 +109,7 @@ func TestPubsubPublisher_Push(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &PubsubPublisher{
+			p := &Publisher{
 				config:       tt.fields.config,
 				outboundPool: tt.fields.outboundPool,
 			}
@@ -236,7 +236,7 @@ func TestPubsubPublisher_Dispatch(t *testing.T) {
 			defer pubsubServerConn.Close()
 			pubsubClient, _ := mockPubsubClient(ctx, t, pubsubServerConn, cfg)
 
-			p := &PubsubPublisher{
+			p := &Publisher{
 				config:       cfg,
 				outboundPool: tt.fields.outboundPool,
 				client:       pubsubClient,

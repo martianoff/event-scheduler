@@ -1,4 +1,4 @@
-package pubsublistener
+package pubsub
 
 import (
 	"cloud.google.com/go/pubsub"
@@ -11,14 +11,14 @@ import (
 	"strconv"
 )
 
-type PubsubListener struct {
+type Listener struct {
 	config      config.Config
 	inboundPool *goconcurrentqueue.FIFO
 	client      *pubsub.Client
 	context     context.Context
 }
 
-func (l *PubsubListener) Boot(ctx context.Context, config config.Config, inboundPool *goconcurrentqueue.FIFO) error {
+func (l *Listener) Boot(ctx context.Context, config config.Config, inboundPool *goconcurrentqueue.FIFO) error {
 	l.config = config
 	l.inboundPool = inboundPool
 	client, err := makePubsubClient(ctx, config)
@@ -26,16 +26,20 @@ func (l *PubsubListener) Boot(ctx context.Context, config config.Config, inbound
 	return err
 }
 
+func (l *Listener) SetPubsubClient(client *pubsub.Client) {
+	l.client = client
+}
+
 func makePubsubClient(ctx context.Context, config config.Config) (*pubsub.Client, error) {
 	client, err := pubsub.NewClient(ctx, config.PubsubListenerProjectID, option.WithCredentialsFile(config.PubsubListenerKeyFile))
 	if err != nil {
-		log.Error("listener client creation failure: ", err.Error())
+		log.Error("listener client boot failure: ", err.Error())
 		return nil, err
 	}
 	return client, err
 }
 
-func (l *PubsubListener) Listen() error {
+func (l *Listener) Listen() error {
 	defer func() {
 		err := l.client.Close()
 		if err != nil {

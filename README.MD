@@ -39,3 +39,19 @@ Event scheduler can be configured via env vars:
 ```bash
 go run app/main.go
 ```
+
+## Tests
+
+```bash
+go test -covermode=atomic ./...
+```
+
+## Future / Roadmap (Unordered)
+
+- Message compression
+- Multi-channel support
+- High availability
+- Persistence storage (backup/recovery)
+- Prometheus metrics
+- ~~Test cases~~
+- Horizontal scaling / Sharding

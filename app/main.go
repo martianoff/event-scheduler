@@ -12,7 +12,16 @@ import (
 )
 
 func main() {
+	os.Exit(app(context.Background()))
+}
+
+func app(ctx context.Context) int {
 	ver := version.GetEventSchedulerVersion()
+
+	cfg := config.Config{}
+	if err := env.Parse(&cfg); err != nil {
+		log.Warningf("%+v\n", err)
+	}
 
 	log.WithFields(log.Fields{
 		"os":         ver.OS,
@@ -23,16 +32,14 @@ func main() {
 		"arch":       ver.Arch,
 	}).Info("Event Scheduler is starting...")
 
-	cfg := config.Config{}
-	if err := env.Parse(&cfg); err != nil {
-		log.Warningf("%+v\n", err)
-	}
-
 	setupLogger(cfg)
 
-	if err := scheduler.NewScheduler(cfg).Run(context.Background()); err != nil {
-		log.Panic("Event Scheduler launch failed")
+	if err := scheduler.NewScheduler(ctx, cfg).Run(ctx); err != nil {
+		log.Error("scheduler failure: ", err.Error())
+		return 1
 	}
+
+	return 0
 }
 
 func setupLogger(config config.Config) {

@@ -6,24 +6,26 @@ import (
 	"github.com/maksimru/event-scheduler/config"
 	"github.com/maksimru/event-scheduler/listener"
 	listenerpubsub "github.com/maksimru/event-scheduler/listener/pubsub"
+	listenertest "github.com/maksimru/event-scheduler/listener/test"
 	"github.com/maksimru/event-scheduler/prioritizer"
 	"github.com/maksimru/event-scheduler/processor"
 	"github.com/maksimru/event-scheduler/publisher"
 	publisherpubsub "github.com/maksimru/event-scheduler/publisher/pubsub"
+	publishertest "github.com/maksimru/event-scheduler/publisher/test"
 	"github.com/maksimru/event-scheduler/storage"
 	log "github.com/sirupsen/logrus"
-	"sync"
+	"golang.org/x/sync/errgroup"
 )
 
 type StartableScheduler interface {
-	Run() error
+	Run(ctx context.Context) error
 }
 
-type BootableScheduler interface {
-	BootProcessor()
-	BootPrioritizer()
-	BootListener()
-	BootPublisher()
+type InitiableScheduler interface {
+	BootProcessor(ctx context.Context)
+	BootPrioritizer(ctx context.Context)
+	BootListener(ctx context.Context)
+	BootPublisher(ctx context.Context)
 }
 
 type Scheduler struct {
@@ -37,70 +39,60 @@ type Scheduler struct {
 	outboundPool *goconcurrentqueue.FIFO
 }
 
-func NewScheduler(config config.Config) *Scheduler {
+func NewScheduler(ctx context.Context, config config.Config) *Scheduler {
 	scheduler := new(Scheduler)
 	scheduler.config = config
 	scheduler.inboundPool = goconcurrentqueue.NewFIFO()
 	scheduler.outboundPool = goconcurrentqueue.NewFIFO()
 	scheduler.dataStorage = storage.NewPqStorage()
+	scheduler.BootPublisher(ctx)
+	scheduler.BootPrioritizer(ctx)
+	scheduler.BootListener(ctx)
+	scheduler.BootProcessor(ctx)
 	return scheduler
 }
 
 func (s *Scheduler) Run(ctx context.Context) error {
-	s.BootPublisher(ctx)
-	s.BootPrioritizer(ctx)
-	s.BootListener(ctx)
-	s.BootProcessor(ctx)
 
-	var wg sync.WaitGroup
+	g, ctx := errgroup.WithContext(ctx)
 
 	// listener receives scheduled jobs and saves them into the inboundPool
-	wg.Add(1)
-	go func(listener *listener.Listener) {
-		defer wg.Done()
-		err := (*listener).Listen()
+	g.Go(func() error {
+		err := s.listener.Listen()
 		if err != nil {
 			log.Error("listener failure: ", err.Error())
-			panic(err)
 		}
-	}(&s.listener)
+		return err
+	})
 
 	// prioritizer receives scheduled jobs from the inboundPool and moves them into data storage
-	wg.Add(1)
-	go func(prioritizer *prioritizer.Prioritizer) {
-		defer wg.Done()
-		err := prioritizer.Process()
+	g.Go(func() error {
+		err := s.prioritizer.Process()
 		if err != nil {
 			log.Error("prioritizer failure: ", err.Error())
-			panic(err)
 		}
-	}(s.prioritizer)
+		return err
+	})
 
 	// processor checks data storage for scheduled jobs if they are ready to dispatch and move them to the outboundPool
-	wg.Add(1)
-	go func(processor *processor.Processor) {
-		defer wg.Done()
-		err := processor.Process()
+	g.Go(func() error {
+		err := s.processor.Process()
 		if err != nil {
 			log.Error("processor failure: ", err.Error())
-			panic(err)
 		}
-	}(s.processor)
+		return err
+	})
 
 	// publisher dispatches prepared jobs from the outboundPool to the destination queue
-	wg.Add(1)
-	go func(publisher *publisher.Publisher) {
-		defer wg.Done()
-		err := (*publisher).Dispatch()
+	g.Go(func() error {
+		err := s.publisher.Dispatch()
 		if err != nil {
 			log.Error("publisher failure: ", err.Error())
-			panic(err)
 		}
-	}(&s.publisher)
+		return err
+	})
 
-	wg.Wait()
-
-	return nil
+	return g.Wait()
 }
 
 func (s *Scheduler) BootProcessor(ctx context.Context) {
@@ -126,13 +118,21 @@ func (s *Scheduler) BootPrioritizer(ctx context.Context) {
 func (s *Scheduler) BootListener(ctx context.Context) {
 	switch s.config.ListenerDriver {
 	case "pubsub":
-		listenerInstance := new(listenerpubsub.PubsubListener)
+		listenerInstance := new(listenerpubsub.Listener)
+		err := listenerInstance.Boot(ctx, s.GetConfig(), s.GetInboundPool())
+		if err != nil {
+			panic("exception during listener boot: " + err.Error())
+		}
+		s.listener = listenerInstance
+	case "test":
+		listenerInstance := new(listenertest.Listener)
 		err := listenerInstance.Boot(ctx, s.GetConfig(), s.GetInboundPool())
 		if err != nil {
 			panic("exception during listener boot: " + err.Error())
 		}
 		s.listener = listenerInstance
 	default:
+		log.Warn("selected listener driver is not yet supported")
 		panic("selected listener driver is not yet supported")
 	}
 	log.Info("listener boot is finished")
@@ -141,13 +141,21 @@ func (s *Scheduler) BootListener(ctx context.Context) {
 func (s *Scheduler) BootPublisher(ctx context.Context) {
 	switch s.config.PublisherDriver {
 	case "pubsub":
-		publisherInstance := new(publisherpubsub.PubsubPublisher)
+		publisherInstance := new(publisherpubsub.Publisher)
+		err := publisherInstance.Boot(ctx, s.GetConfig(), s.GetOutboundPool())
+		if err != nil {
+			panic("exception during publisher boot: " + err.Error())
+		}
+		s.publisher = publisherInstance
+	case "test":
+		publisherInstance := new(publishertest.Publisher)
 		err := publisherInstance.Boot(ctx, s.GetConfig(), s.GetOutboundPool())
 		if err != nil {
 			panic("exception during publisher boot: " + err.Error())
 		}
 		s.publisher = publisherInstance
 	default:
+		log.Warn("selected publisher driver is not yet supported")
 		panic("selected publisher driver is not yet supported")
 	}
 	log.Info("publisher boot is finished")

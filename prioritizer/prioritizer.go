@@ -19,6 +19,7 @@ func (p *Prioritizer) Process() error {
 	for {
 		select {
 		case <-p.context.Done():
+			log.Warn("prioritizer is stopped")
 			return nil
 		default:
 		}
