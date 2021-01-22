@@ -156,7 +156,7 @@ func TestProcessor_Process(t *testing.T) {
 
 			outboundQueue := goconcurrentqueue.NewFIFO()
 			publisherInstance := new(pubsub.Publisher)
-			publisherInstance.Boot(ctx, config.Config{}, outboundQueue)
+			_ = publisherInstance.Boot(ctx, config.Config{}, outboundQueue)
 
 			p := &Processor{
 				publisher:   publisherInstance,

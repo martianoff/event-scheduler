@@ -102,7 +102,9 @@ func Test_makePubsubClient(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			client, err := makePubsubClient(tt.args.ctx, tt.args.config)
-			defer client.Close()
+			defer func() {
+				_ = client.Close()
+			}()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("makePubsubClient() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -117,7 +119,7 @@ func mockPubsubClient(ctx context.Context, t *testing.T, pubsubServerConn *grpc.
 	if err != nil {
 		t.Error(err)
 	}
-	pubsubClient.CreateSubscription(ctx, cfg.PubsubListenerSubscriptionID, pubsub.SubscriptionConfig{
+	_, _ = pubsubClient.CreateSubscription(ctx, cfg.PubsubListenerSubscriptionID, pubsub.SubscriptionConfig{
 		Topic: topic,
 	})
 	return pubsubClient, topic
@@ -128,7 +130,9 @@ func TestListenerPubsub_Listen(t *testing.T) {
 		inboundPool *goconcurrentqueue.FIFO
 	}
 	pubsubServer := pstest.NewServer()
-	defer pubsubServer.Close()
+	defer func() {
+		_ = pubsubServer.Close()
+	}()
 
 	tests := []struct {
 		name    string
@@ -209,7 +213,9 @@ func TestListenerPubsub_Listen(t *testing.T) {
 
 			// make pubsub client-server connection
 			pubsubServerConn, _ := grpc.Dial(pubsubServer.Addr, grpc.WithInsecure())
-			defer pubsubServerConn.Close()
+			defer func() {
+				_ = pubsubServerConn.Close()
+			}()
 			pubsubClient, topic := mockPubsubClient(ctx, t, pubsubServerConn, cfg)
 
 			l := &Listener{
@@ -230,7 +236,7 @@ func TestListenerPubsub_Listen(t *testing.T) {
 			}
 
 			// read received messages
-			got := []priorityqueue.StringPrioritizedValue{}
+			var got []priorityqueue.StringPrioritizedValue
 			for l.inboundPool.GetLen() > 0 {
 				item, _ := l.inboundPool.Dequeue()
 				got = append(got, item.(priorityqueue.StringPrioritizedValue))

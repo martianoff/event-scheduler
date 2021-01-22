@@ -10,11 +10,11 @@ import (
 type Publisher struct {
 }
 
-func (p *Publisher) Boot(ctx context.Context, config config.Config, outboundPool *goconcurrentqueue.FIFO) error {
+func (p *Publisher) Boot(context.Context, config.Config, *goconcurrentqueue.FIFO) error {
 	return nil
 }
 
-func (p *Publisher) Push(msg message.Message) error {
+func (p *Publisher) Push(message.Message) error {
 	return nil
 }
 
