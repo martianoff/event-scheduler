@@ -46,6 +46,15 @@ go run app/main.go
 go test -covermode=atomic ./...
 ```
 
+## Run with Kubernetes
+
+```bash
+# replace serviceaccount.json to the path to your service account key file with PubsubPermissions
+kubectl create secret generic pubsubserviceaccount --from-file key.json=serviceaccount.json
+# feel free to adjust env vars inside deployment manifest
+kubectl apply -f ./event-scheduler/kubernetes/deployment
+```
+
 ## Future / Roadmap (Unordered)
 
 - Message compression

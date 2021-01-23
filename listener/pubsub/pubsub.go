@@ -8,6 +8,7 @@ import (
 	"github.com/maksimru/go-hpds/priorityqueue"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/api/option"
+	"runtime"
 	"strconv"
 )
 
@@ -48,6 +49,12 @@ func (l *Listener) Listen() error {
 	}()
 
 	sub := l.client.Subscription(l.config.PubsubListenerSubscriptionID)
+	sub.ReceiveSettings.Synchronous = false
+	sub.ReceiveSettings.NumGoroutines = runtime.NumCPU()
+
+	// Dedicated context
+	pubsubContext, cancelListener := context.WithCancel(l.context)
+	defer cancelListener()
 
 	// Create a channel to handle messages to as they come in.
 	cm := make(chan *pubsub.Message)
@@ -72,7 +79,7 @@ func (l *Listener) Listen() error {
 		}
 	}()
 
-	err := sub.Receive(l.context, func(ctx context.Context, msg *pubsub.Message) {
+	err := sub.Receive(pubsubContext, func(ctx context.Context, msg *pubsub.Message) {
 		cm <- msg
 	})
 
