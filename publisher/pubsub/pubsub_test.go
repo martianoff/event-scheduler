@@ -155,7 +155,9 @@ func Test_makePubsubClient(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			client, err := makePubsubClient(tt.args.ctx, tt.args.config)
-			defer client.Close()
+			defer func() {
+				_ = client.Close()
+			}()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("makePubsubClient() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -170,7 +172,7 @@ func mockPubsubClient(ctx context.Context, t *testing.T, pubsubServerConn *grpc.
 	if err != nil {
 		t.Error(err)
 	}
-	pubsubClient.CreateSubscription(ctx, cfg.PubsubPublisherTopicID, pubsub.SubscriptionConfig{
+	_, _ = pubsubClient.CreateSubscription(ctx, cfg.PubsubPublisherTopicID, pubsub.SubscriptionConfig{
 		Topic: topic,
 	})
 	return pubsubClient, topic
@@ -221,8 +223,9 @@ func TestPubsubPublisher_Dispatch(t *testing.T) {
 	for testID, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pubsubServer := pstest.NewServer()
-			defer pubsubServer.Close()
-
+			defer func() {
+				_ = pubsubServer.Close()
+			}()
 			// mock individual context for each test
 			ctx := context.Background()
 			ctx, cancel := context.WithTimeout(ctx, time.Second*3)
@@ -233,7 +236,9 @@ func TestPubsubPublisher_Dispatch(t *testing.T) {
 			}
 			// make pubsub client-server connection
 			pubsubServerConn, _ := grpc.Dial(pubsubServer.Addr, grpc.WithInsecure())
-			defer pubsubServerConn.Close()
+			defer func() {
+				_ = pubsubServerConn.Close()
+			}()
 			pubsubClient, _ := mockPubsubClient(ctx, t, pubsubServerConn, cfg)
 
 			p := &Publisher{
@@ -245,7 +250,7 @@ func TestPubsubPublisher_Dispatch(t *testing.T) {
 
 			// mock outbound queue
 			for _, msg := range tt.publish {
-				p.outboundPool.Enqueue(msg)
+				_ = p.outboundPool.Enqueue(msg)
 			}
 
 			if !tt.wantErr {
@@ -255,7 +260,7 @@ func TestPubsubPublisher_Dispatch(t *testing.T) {
 			}
 
 			// read pushed messages
-			got := []pubsub.Message{}
+			var got []pubsub.Message
 
 			for _, msg := range pubsubServer.Messages() {
 				got = append(got, pubsub.Message{

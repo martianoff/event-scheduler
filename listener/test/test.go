@@ -9,7 +9,7 @@ import (
 type Listener struct {
 }
 
-func (l *Listener) Boot(ctx context.Context, config config.Config, inboundPool *goconcurrentqueue.FIFO) error {
+func (l *Listener) Boot(context.Context, config.Config, *goconcurrentqueue.FIFO) error {
 	return nil
 }
 

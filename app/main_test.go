@@ -150,7 +150,7 @@ func TestMainFunc(t *testing.T) {
 			defer cancel()
 			// mock env vars
 			for k, v := range tt.env {
-				os.Setenv(k, v)
+				_ = os.Setenv(k, v)
 			}
 			assert.Equal(t, tt.expectedExit, app(ctx))
 		})

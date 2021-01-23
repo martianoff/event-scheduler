@@ -565,7 +565,7 @@ func mockPubsubListenerClient(ctx context.Context, t *testing.T, pubsubServerCon
 	if err != nil {
 		t.Error(err)
 	}
-	pubsubClient.CreateSubscription(ctx, cfg.PubsubListenerSubscriptionID, pubsub.SubscriptionConfig{
+	_, _ = pubsubClient.CreateSubscription(ctx, cfg.PubsubListenerSubscriptionID, pubsub.SubscriptionConfig{
 		Topic: topic,
 	})
 	return pubsubClient, topic
@@ -680,10 +680,14 @@ func TestScheduler_Run(t *testing.T) {
 
 			// mock pubsub servers
 			sourcePubsubServer := pstest.NewServer()
-			defer sourcePubsubServer.Close()
+			defer func() {
+				_ = sourcePubsubServer.Close()
+			}()
 
 			destPubsubServer := pstest.NewServer()
-			defer destPubsubServer.Close()
+			defer func() {
+				_ = destPubsubServer.Close()
+			}()
 
 			// mock individual context for each test
 			ctx := context.Background()
@@ -695,18 +699,22 @@ func TestScheduler_Run(t *testing.T) {
 
 			// make pubsub listener client-server connection
 			sourcePubsubServerConn, _ := grpc.Dial(sourcePubsubServer.Addr, grpc.WithInsecure())
-			defer sourcePubsubServerConn.Close()
+			defer func() {
+				_ = sourcePubsubServerConn.Close()
+			}()
 			sourcePubsubClient, topic := mockPubsubListenerClient(ctx, t, sourcePubsubServerConn, tt.fields.config)
 			pubsubListener := &listenerpubsub.Listener{}
-			pubsubListener.Boot(ctx, tt.fields.config, s.inboundPool)
+			_ = pubsubListener.Boot(ctx, tt.fields.config, s.inboundPool)
 			pubsubListener.SetPubsubClient(sourcePubsubClient)
 
 			// make pubsub publisher client-server connection
 			destPubsubServerConn, _ := grpc.Dial(destPubsubServer.Addr, grpc.WithInsecure())
-			defer destPubsubServerConn.Close()
+			defer func() {
+				_ = destPubsubServerConn.Close()
+			}()
 			destPubsubClient, _ := mockPubsubPublisherClient(ctx, t, destPubsubServerConn, tt.fields.config)
 			pubsubPublisher := &publisherpubsub.Publisher{}
-			pubsubPublisher.Boot(ctx, tt.fields.config, s.outboundPool)
+			_ = pubsubPublisher.Boot(ctx, tt.fields.config, s.outboundPool)
 			pubsubPublisher.SetPubsubClient(destPubsubClient)
 
 			// publish test messages
