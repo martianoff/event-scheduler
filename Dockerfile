@@ -1,4 +1,4 @@
-FROM golang:alpine AS builder
+FROM golang:1.15 AS builder
 
 ENV GO111MODULE=on \
     CGO_ENABLED=0 \
@@ -25,7 +25,7 @@ WORKDIR /dist
 # Copy binary from build to main folder
 RUN cp /build/eventscheduler .
 
-FROM scratch
+FROM gcr.io/distroless/base
 
 COPY --from=builder /dist/eventscheduler /
 
