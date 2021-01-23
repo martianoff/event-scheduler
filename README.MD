@@ -55,3 +55,4 @@ go test -covermode=atomic ./...
 - Prometheus metrics
 - ~~Test cases~~
 - Horizontal scaling / Sharding
+- Helm package
