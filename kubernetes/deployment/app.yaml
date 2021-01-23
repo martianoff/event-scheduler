@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: event-scheduler
+  name: event-scheduler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: event-scheduler
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 100%
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: event-scheduler
+    spec:
+      containers:
+        - image: maxmtmn/event-scheduler:latest
+          name: event-scheduler
+          imagePullPolicy: IfNotPresent
+          resources: {}
+          env:
+          - name: LOG_LEVEL
+            value: info
+          - name: LISTENER_DRIVER
+            value: pubsub
+          - name: PUBSUB_LISTENER_PROJECT_ID
+            value: YOUR_SOURCE_GOOGLE_PROJECT
+          - name: PUBSUB_LISTENER_SUBSCRIPTION_ID
+            value: YOUR_SOURCE_SUBSCRIPTION
+          - name: PUBSUB_LISTENER_KEY_FILE
+            value: key.json
+          - name: PUBLISHER_DRIVER
+            value: pubsub
+          - name: PUBSUB_PUBLISHER_PROJECT_ID
+            value: YOUR_TARGET_GOOGLE_PROJECT
+          - name: PUBSUB_PUBLISHER_TOPIC_ID
+            value: YOUR_TARGET_TOPIC
+          - name: PUBSUB_PUBLISHER_KEY_FILE
+            value: key.json
+          volumeMounts:
+          - name: keyfile
+            subPath: key.json
+            mountPath: /key.json
+            readOnly: true
+      volumes:
+      - name: keyfile
+        secret:
+          secretName: pubsubserviceaccount
