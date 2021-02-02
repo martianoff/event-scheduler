@@ -65,3 +65,5 @@ kubectl apply -f ./event-scheduler/kubernetes/deployment
 - ~~Test cases~~
 - Horizontal scaling / Sharding
 - Helm package
+- ~~Docker build~~
+- ~~Sample kubernetes deployment~~

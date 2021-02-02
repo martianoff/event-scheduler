@@ -2,8 +2,11 @@ package scheduler
 
 import (
 	"context"
+	"github.com/BBVA/raft-badger"
 	"github.com/enriquebris/goconcurrentqueue"
+	"github.com/hashicorp/raft"
 	"github.com/maksimru/event-scheduler/config"
+	"github.com/maksimru/event-scheduler/fsm"
 	"github.com/maksimru/event-scheduler/listener"
 	listenerpubsub "github.com/maksimru/event-scheduler/listener/pubsub"
 	listenertest "github.com/maksimru/event-scheduler/listener/test"
@@ -15,6 +18,18 @@ import (
 	"github.com/maksimru/event-scheduler/storage"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
+	"io/ioutil"
+	"net"
+	"os"
+	"time"
+)
+
+const (
+	raftSnapShotRetain      = 2
+	raftLogCacheSize        = 256
+	raftSnapshotThreshold   = 2024
+	raftTransportTcpTimeout = 10 * time.Second
+	raftTransportMaxPool    = 10
 )
 
 type StartableScheduler interface {
@@ -37,6 +52,7 @@ type Scheduler struct {
 	dataStorage  *storage.PqStorage
 	inboundPool  *goconcurrentqueue.FIFO
 	outboundPool *goconcurrentqueue.FIFO
+	raftCluster  *raft.Raft
 }
 
 func NewScheduler(ctx context.Context, config config.Config) *Scheduler {
@@ -49,6 +65,7 @@ func NewScheduler(ctx context.Context, config config.Config) *Scheduler {
 	scheduler.BootPrioritizer(ctx)
 	scheduler.BootListener(ctx)
 	scheduler.BootProcessor(ctx)
+	scheduler.BootCluster(ctx)
 	return scheduler
 }
 
@@ -93,6 +110,39 @@ func (s *Scheduler) Run(ctx context.Context) error {
 	})
 
 	return g.Wait()
+}
+
+func (s *Scheduler) BootCluster(ctx context.Context) {
+	path, _ := ioutil.TempDir("storage", "scheduler")
+	store, err := raftbadger.NewBadgerStore(path)
+	if err != nil {
+		panic("exception during badger store boot: " + err.Error())
+	}
+	cacheStore, err := raft.NewLogCache(raftLogCacheSize, store)
+	if err != nil {
+		panic("exception during badger cache store boot: " + err.Error())
+	}
+	snapshotStore, err := raft.NewFileSnapshotStore("snapshots", raftSnapShotRetain, os.Stdout)
+	if err != nil {
+		panic("exception during snapshot store boot: " + err.Error())
+	}
+	raftTransportTcpAddr := "127.0.0.1:1101"
+	tcpAddr, err := net.ResolveTCPAddr("tcp", raftTransportTcpAddr)
+	transport, err := raft.NewTCPTransport(raftTransportTcpAddr, tcpAddr, raftTransportMaxPool, raftTransportTcpTimeout, os.Stdout)
+	if err != nil {
+		panic("exception during tcp transport boot: " + err.Error())
+	}
+	raftconfig := raft.DefaultConfig()
+	raftconfig.LogLevel = s.config.LogLevel
+	nodeHost, _ := os.Hostname()
+	raftconfig.LocalID = raft.ServerID(nodeHost)
+	raftconfig.SnapshotThreshold = raftSnapshotThreshold
+	raftServer, err := raft.NewRaft(raftconfig, fsm.NewPrioritizedFSM(s.dataStorage), cacheStore, store, snapshotStore, transport)
+	if err != nil {
+		panic("exception during raft clusterization boot: " + err.Error())
+	}
+	s.raftCluster = raftServer
+	log.Info("cluster boot is finished: ", nodeHost)
 }
 
 func (s *Scheduler) BootProcessor(ctx context.Context) {
