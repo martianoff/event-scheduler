@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"github.com/maksimru/event-scheduler/message"
 	"github.com/maksimru/go-hpds/doublylinkedlist"
 	"github.com/maksimru/go-hpds/priorityqueue"
 	"github.com/maksimru/go-hpds/utils/arraylist"
@@ -11,6 +12,10 @@ import (
 type PrioritizedNodePointer struct {
 	value    *doublylinkedlist.Node
 	priority int
+}
+
+func NewPrioritizedNodePointer(value *doublylinkedlist.Node, priority int) PrioritizedNodePointer {
+	return PrioritizedNodePointer{value: value, priority: priority}
 }
 
 func (v PrioritizedNodePointer) GetValue() interface{} {
@@ -91,20 +96,20 @@ func NewPqStorage() *PqStorage {
 	}
 }
 
-func (p *PqStorage) Dequeue() priorityqueue.StringPrioritizedValue {
+func (p *PqStorage) Dequeue() message.Message {
 	p.mutex.Lock()
 	priorityData := p.dataStorage.Dequeue().(PrioritizedNodePointer)
 	msgPtr := priorityData.GetValue().(*doublylinkedlist.Node)
-	msgData := msgPtr.GetValue().(priorityqueue.StringPrioritizedValue)
+	msgData := msgPtr.GetValue().(message.Message)
 	msgPtr.Remove()
 	p.mutex.Unlock()
 	return msgData
 }
 
-func (p *PqStorage) Enqueue(value priorityqueue.PrioritizedValue) {
+func (p *PqStorage) Enqueue(value message.Message) {
 	p.mutex.Lock()
 	node := p.iterator.Append(value)
-	p.dataStorage.Enqueue(PrioritizedNodePointer{value: node, priority: value.GetPriority()})
+	p.dataStorage.Enqueue(NewPrioritizedNodePointer(node, value.GetAvailableAt()))
 	p.mutex.Unlock()
 }
 
@@ -131,13 +136,13 @@ func (p *PqStorage) Flush() {
 	p.mutex.Unlock()
 }
 
-func (p *PqStorage) Dump() *[]priorityqueue.StringPrioritizedValue {
+func (p *PqStorage) Dump() *[]message.Message {
 	p.mutex.Lock()
-	clone := make([]priorityqueue.StringPrioritizedValue, p.dataStorage.GetLength())
+	clone := make([]message.Message, p.dataStorage.GetLength())
 	node := p.iterator.GetHead()
 	i := 0
 	for node != nil {
-		clone[i] = node.GetValue().(priorityqueue.StringPrioritizedValue)
+		clone[i] = node.GetValue().(message.Message)
 		node = node.GetNext()
 		i++
 	}

@@ -8,7 +8,6 @@ import (
 	"github.com/maksimru/event-scheduler/publisher"
 	"github.com/maksimru/event-scheduler/publisher/pubsub"
 	"github.com/maksimru/event-scheduler/storage"
-	"github.com/maksimru/go-hpds/priorityqueue"
 	"github.com/stretchr/testify/assert"
 	"reflect"
 	"testing"
@@ -73,8 +72,8 @@ func TestProcessor_Process(t *testing.T) {
 		fields        fields
 		wantErr       bool
 		now           time.Time
-		storageData   []priorityqueue.StringPrioritizedValue
-		wantStorage   []priorityqueue.StringPrioritizedValue
+		storageData   []message.Message
+		wantStorage   []message.Message
 		wantPublished []message.Message
 	}{
 		{
@@ -83,14 +82,14 @@ func TestProcessor_Process(t *testing.T) {
 				dataStorage: storage.NewPqStorage(),
 				time:        RealTime{},
 			},
-			storageData: []priorityqueue.StringPrioritizedValue{
-				priorityqueue.NewStringPrioritizedValue("msg2", 400),
-				priorityqueue.NewStringPrioritizedValue("msg3", 600),
-				priorityqueue.NewStringPrioritizedValue("msg1", 1000),
-				priorityqueue.NewStringPrioritizedValue("msg5", 1200),
-				priorityqueue.NewStringPrioritizedValue("msg4", 2000),
+			storageData: []message.Message{
+				message.NewMessage("msg2", 400),
+				message.NewMessage("msg3", 600),
+				message.NewMessage("msg1", 1000),
+				message.NewMessage("msg5", 1200),
+				message.NewMessage("msg4", 2000),
 			},
-			wantStorage: []priorityqueue.StringPrioritizedValue{},
+			wantStorage: []message.Message{},
 			wantPublished: []message.Message{
 				message.NewMessage("msg2", 400),
 				message.NewMessage("msg3", 600),
@@ -106,19 +105,19 @@ func TestProcessor_Process(t *testing.T) {
 				dataStorage: storage.NewPqStorage(),
 				time:        NewMockTime(time.Unix(0, 0)), // simulate 0 timestamp
 			},
-			storageData: []priorityqueue.StringPrioritizedValue{
-				priorityqueue.NewStringPrioritizedValue("msg2", 400),
-				priorityqueue.NewStringPrioritizedValue("msg3", 600),
-				priorityqueue.NewStringPrioritizedValue("msg1", 1000),
-				priorityqueue.NewStringPrioritizedValue("msg5", 1200),
-				priorityqueue.NewStringPrioritizedValue("msg4", 2000),
+			storageData: []message.Message{
+				message.NewMessage("msg2", 400),
+				message.NewMessage("msg3", 600),
+				message.NewMessage("msg1", 1000),
+				message.NewMessage("msg5", 1200),
+				message.NewMessage("msg4", 2000),
 			},
-			wantStorage: []priorityqueue.StringPrioritizedValue{
-				priorityqueue.NewStringPrioritizedValue("msg2", 400),
-				priorityqueue.NewStringPrioritizedValue("msg3", 600),
-				priorityqueue.NewStringPrioritizedValue("msg1", 1000),
-				priorityqueue.NewStringPrioritizedValue("msg5", 1200),
-				priorityqueue.NewStringPrioritizedValue("msg4", 2000),
+			wantStorage: []message.Message{
+				message.NewMessage("msg2", 400),
+				message.NewMessage("msg3", 600),
+				message.NewMessage("msg1", 1000),
+				message.NewMessage("msg5", 1200),
+				message.NewMessage("msg4", 2000),
 			},
 			wantPublished: []message.Message{},
 			wantErr:       false,
@@ -129,17 +128,17 @@ func TestProcessor_Process(t *testing.T) {
 				dataStorage: storage.NewPqStorage(),
 				time:        NewMockTime(time.Unix(600, 0)), // simulate 600 timestamp
 			},
-			storageData: []priorityqueue.StringPrioritizedValue{
-				priorityqueue.NewStringPrioritizedValue("msg2", 400),
-				priorityqueue.NewStringPrioritizedValue("msg3", 600),
-				priorityqueue.NewStringPrioritizedValue("msg1", 1000),
-				priorityqueue.NewStringPrioritizedValue("msg5", 1200),
-				priorityqueue.NewStringPrioritizedValue("msg4", 2000),
+			storageData: []message.Message{
+				message.NewMessage("msg2", 400),
+				message.NewMessage("msg3", 600),
+				message.NewMessage("msg1", 1000),
+				message.NewMessage("msg5", 1200),
+				message.NewMessage("msg4", 2000),
 			},
-			wantStorage: []priorityqueue.StringPrioritizedValue{
-				priorityqueue.NewStringPrioritizedValue("msg1", 1000),
-				priorityqueue.NewStringPrioritizedValue("msg5", 1200),
-				priorityqueue.NewStringPrioritizedValue("msg4", 2000),
+			wantStorage: []message.Message{
+				message.NewMessage("msg1", 1000),
+				message.NewMessage("msg5", 1200),
+				message.NewMessage("msg4", 2000),
 			},
 			wantPublished: []message.Message{
 				message.NewMessage("msg2", 400),
@@ -177,7 +176,7 @@ func TestProcessor_Process(t *testing.T) {
 				assert.Error(t, p.Process())
 			}
 			// validate unprocessed records
-			gotStorage := []priorityqueue.StringPrioritizedValue{}
+			gotStorage := []message.Message{}
 			for !p.dataStorage.IsEmpty() {
 				gotStorage = append(gotStorage, p.dataStorage.Dequeue())
 			}

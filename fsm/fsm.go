@@ -3,8 +3,8 @@ package fsm
 import (
 	"encoding/json"
 	"github.com/hashicorp/raft"
+	"github.com/maksimru/event-scheduler/message"
 	"github.com/maksimru/event-scheduler/storage"
-	"github.com/maksimru/go-hpds/priorityqueue"
 	log "github.com/sirupsen/logrus"
 	"io"
 )
@@ -24,7 +24,7 @@ const OperationPop int = 1
 
 type CommandPayload struct {
 	Operation int
-	Value     priorityqueue.StringPrioritizedValue
+	Value     message.Message
 }
 
 type ApplyResponse struct {
@@ -32,7 +32,7 @@ type ApplyResponse struct {
 }
 
 type fsmSnapshot struct {
-	dump *[]priorityqueue.StringPrioritizedValue
+	dump *[]message.Message
 }
 
 // Persist should dump all necessary state to the WriteCloser 'sink',
@@ -123,8 +123,8 @@ func (b prioritizedFSM) Restore(rClose io.ReadCloser) error {
 	b.storage.Flush()
 	decoder := json.NewDecoder(rClose)
 	for decoder.More() {
-		var data = &priorityqueue.StringPrioritizedValue{}
-		err := decoder.Decode(data)
+		var data = message.Message{}
+		err := decoder.Decode(&data)
 		if err != nil {
 			log.Errorf("Snapshot restore failed: error decode data %s\n", err.Error())
 			return err

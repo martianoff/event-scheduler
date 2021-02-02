@@ -54,13 +54,13 @@ func (p *Processor) Process() error {
 		now := int(p.time.Now().Unix())
 		if p.dataStorage.CheckScheduled(now) {
 			msg := p.dataStorage.Dequeue()
-			log.Trace("processor message is ready for delivery: scheduled for ", msg.GetPriority(), " at ", now)
-			err := p.publisher.Push(message.NewMessage(msg.GetValue(), msg.GetPriority()))
+			log.Trace("processor message is ready for delivery: scheduled for ", msg.GetAvailableAt(), " at ", now)
+			err := p.publisher.Push(message.NewMessage(msg.GetBody(), msg.GetAvailableAt()))
 			if err != nil {
-				log.Error("processor message publish exception: scheduled for ", msg.GetPriority(), " at ", now, " ", err.Error())
+				log.Error("processor message publish exception: scheduled for ", msg.GetAvailableAt(), " at ", now, " ", err.Error())
 				return err
 			}
-			log.Trace("processor message published: scheduled for ", msg.GetPriority(), " at ", now)
+			log.Trace("processor message published: scheduled for ", msg.GetAvailableAt(), " at ", now)
 		} else {
 			time.Sleep(time.Second)
 		}

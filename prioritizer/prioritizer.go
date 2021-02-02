@@ -3,8 +3,8 @@ package prioritizer
 import (
 	"context"
 	"github.com/enriquebris/goconcurrentqueue"
+	"github.com/maksimru/event-scheduler/message"
 	"github.com/maksimru/event-scheduler/storage"
-	"github.com/maksimru/go-hpds/priorityqueue"
 	log "github.com/sirupsen/logrus"
 	"time"
 )
@@ -28,10 +28,10 @@ func (p *Prioritizer) Process() error {
 			time.Sleep(time.Second)
 			continue
 		}
-		message, _ := p.inboundPool.Dequeue()
-		prioritizedMsg := message.(priorityqueue.StringPrioritizedValue)
+		msg, _ := p.inboundPool.Dequeue()
+		prioritizedMsg := msg.(message.Message)
 		p.dataStorage.Enqueue(prioritizedMsg)
-		log.Trace("prioritizer message pushed to the storage: ", prioritizedMsg.GetValue(), " scheduled at ", prioritizedMsg.GetPriority())
+		log.Trace("prioritizer message pushed to the storage: ", prioritizedMsg.GetBody(), " scheduled at ", prioritizedMsg.GetAvailableAt())
 	}
 }
 

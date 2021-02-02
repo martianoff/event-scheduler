@@ -5,7 +5,7 @@ import (
 	"context"
 	"github.com/enriquebris/goconcurrentqueue"
 	"github.com/maksimru/event-scheduler/config"
-	"github.com/maksimru/go-hpds/priorityqueue"
+	"github.com/maksimru/event-scheduler/message"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/api/option"
 	"runtime"
@@ -69,7 +69,7 @@ func (l *Listener) Listen() error {
 				if err != nil {
 					log.Error("listener unable to read available_at attribute: ", err.Error())
 				} else {
-					err = l.inboundPool.Enqueue(priorityqueue.NewStringPrioritizedValue(string(msg.Data), priority))
+					err = l.inboundPool.Enqueue(message.NewMessage(string(msg.Data), priority))
 					if err != nil {
 						log.Error("listener inbound pool enqueue exception: ", err.Error())
 					}

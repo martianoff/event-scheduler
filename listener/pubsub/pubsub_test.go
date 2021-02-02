@@ -6,7 +6,7 @@ import (
 	"context"
 	"github.com/enriquebris/goconcurrentqueue"
 	"github.com/maksimru/event-scheduler/config"
-	"github.com/maksimru/go-hpds/priorityqueue"
+	"github.com/maksimru/event-scheduler/message"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
@@ -139,7 +139,7 @@ func TestListenerPubsub_Listen(t *testing.T) {
 		fields  fields
 		wantErr bool
 		publish []*pubsub.Message
-		want    []priorityqueue.StringPrioritizedValue
+		want    []message.Message
 	}{
 		{
 			name: "Check pubsub listener can receive single message with available_at attribute",
@@ -151,7 +151,7 @@ func TestListenerPubsub_Listen(t *testing.T) {
 				Attributes: map[string]string{"available_at": "1000"},
 			}},
 			wantErr: false,
-			want:    []priorityqueue.StringPrioritizedValue{priorityqueue.NewStringPrioritizedValue("foo", 1000)},
+			want:    []message.Message{message.NewMessage("foo", 1000)},
 		},
 		{
 			name: "Check pubsub listener can receive single message without available_at attribute",
@@ -163,7 +163,7 @@ func TestListenerPubsub_Listen(t *testing.T) {
 				Attributes: map[string]string{},
 			}},
 			wantErr: false,
-			want:    []priorityqueue.StringPrioritizedValue{},
+			want:    []message.Message{},
 		},
 		{
 			name: "Check pubsub listener can receive single message with wrong available_at attribute",
@@ -175,7 +175,7 @@ func TestListenerPubsub_Listen(t *testing.T) {
 				Attributes: map[string]string{"available_at": "foo"},
 			}},
 			wantErr: false,
-			want:    []priorityqueue.StringPrioritizedValue{},
+			want:    []message.Message{},
 		},
 		{
 			name: "Check pubsub listener can receive multiple messages",
@@ -193,10 +193,10 @@ func TestListenerPubsub_Listen(t *testing.T) {
 				Attributes: map[string]string{"available_at": "1200"},
 			}},
 			wantErr: false,
-			want: []priorityqueue.StringPrioritizedValue{
-				priorityqueue.NewStringPrioritizedValue("msg1", 1000),
-				priorityqueue.NewStringPrioritizedValue("msg2", 1100),
-				priorityqueue.NewStringPrioritizedValue("msg3", 1200),
+			want: []message.Message{
+				message.NewMessage("msg1", 1000),
+				message.NewMessage("msg2", 1100),
+				message.NewMessage("msg3", 1200),
 			},
 		},
 	}
@@ -236,10 +236,10 @@ func TestListenerPubsub_Listen(t *testing.T) {
 			}
 
 			// read received messages
-			var got []priorityqueue.StringPrioritizedValue
+			var got []message.Message
 			for l.inboundPool.GetLen() > 0 {
 				item, _ := l.inboundPool.Dequeue()
-				got = append(got, item.(priorityqueue.StringPrioritizedValue))
+				got = append(got, item.(message.Message))
 			}
 			// compare received messages
 			if !reflect.DeepEqual(got, tt.want) {

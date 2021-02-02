@@ -1,21 +1,21 @@
 package message
 
 type Message struct {
-	availableAt int
-	body        interface{}
+	AvailableAt int
+	Body        interface{}
 }
 
 func (msg Message) GetBody() interface{} {
-	return msg.body
+	return msg.Body
 }
 
 func (msg Message) GetAvailableAt() int {
-	return msg.availableAt
+	return msg.AvailableAt
 }
 
 func NewMessage(body interface{}, availableAt int) Message {
 	return Message{
-		availableAt: availableAt,
-		body:        body,
+		AvailableAt: availableAt,
+		Body:        body,
 	}
 }
