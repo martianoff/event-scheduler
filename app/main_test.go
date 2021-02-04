@@ -123,6 +123,7 @@ func TestMainFunc(t *testing.T) {
 		name         string
 		expectedExit int
 		env          map[string]string
+		removeDir    string
 	}{
 		{
 			name:         "Test wrongly configured application launch",
@@ -132,7 +133,10 @@ func TestMainFunc(t *testing.T) {
 				"PUBLISHER_DRIVER":          "pubsub",
 				"PUBSUB_LISTENER_KEY_FILE":  dir + "/tests/pubsub_cred_mock.json",
 				"PUBSUB_PUBLISHER_KEY_FILE": dir + "/tests/pubsub_cred_mock.json",
+				"STORAGE_PATH":              dir + "/tests/tempStorage1",
+				"CLUSTER_PORT":              "5556",
 			},
+			removeDir: dir + "/tests/tempStorage1",
 		},
 		{
 			name:         "Test correctly configured application launch",
@@ -140,15 +144,19 @@ func TestMainFunc(t *testing.T) {
 			env: map[string]string{
 				"LISTENER_DRIVER":  "test",
 				"PUBLISHER_DRIVER": "test",
+				"STORAGE_PATH":     dir + "/tests/tempStorage2",
+				"CLUSTER_PORT":     "5557",
 			},
+			removeDir: dir + "/tests/tempStorage2",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			ctx, cancel := context.WithTimeout(ctx, time.Second*1)
+			ctx, cancel := context.WithTimeout(ctx, time.Second*4)
 			defer cancel()
 			// mock env vars
+			_ = os.RemoveAll(tt.removeDir)
 			for k, v := range tt.env {
 				_ = os.Setenv(k, v)
 			}

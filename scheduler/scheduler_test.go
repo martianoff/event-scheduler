@@ -5,17 +5,21 @@ import (
 	"cloud.google.com/go/pubsub/pstest"
 	"context"
 	"github.com/enriquebris/goconcurrentqueue"
+	"github.com/hashicorp/raft"
 	"github.com/maksimru/event-scheduler/config"
 	"github.com/maksimru/event-scheduler/listener"
 	listenerpubsub "github.com/maksimru/event-scheduler/listener/pubsub"
+	listenertest "github.com/maksimru/event-scheduler/listener/test"
 	"github.com/maksimru/event-scheduler/prioritizer"
 	"github.com/maksimru/event-scheduler/processor"
 	"github.com/maksimru/event-scheduler/publisher"
 	publisherpubsub "github.com/maksimru/event-scheduler/publisher/pubsub"
+	publishertest "github.com/maksimru/event-scheduler/publisher/test"
 	"github.com/maksimru/event-scheduler/storage"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
+	"os"
 	"path"
 	"reflect"
 	"runtime"
@@ -37,14 +41,22 @@ func TestNewScheduler(t *testing.T) {
 			name: "Test scheduler constructor",
 			args: args{
 				config: config.Config{
-					ListenerDriver:  "test",
-					PublisherDriver: "test",
+					ListenerDriver:   "test",
+					PublisherDriver:  "test",
+					StoragePath:      getProjectPath() + "/tests/tempStorageNs1",
+					ClusterPort:      "5555",
+					ClusterNodeID:    "sc1",
+					ClusterIPAddress: "127.0.0.1",
 				},
 			},
 			want: &Scheduler{
 				config: config.Config{
-					ListenerDriver:  "test",
-					PublisherDriver: "test",
+					ListenerDriver:   "test",
+					PublisherDriver:  "test",
+					StoragePath:      getProjectPath() + "/tests/tempStorageNs1",
+					ClusterPort:      "5555",
+					ClusterNodeID:    "sc1",
+					ClusterIPAddress: "127.0.0.1",
 				},
 				listener:     nil,
 				publisher:    nil,
@@ -58,6 +70,7 @@ func TestNewScheduler(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			_ = os.RemoveAll(tt.args.config.StoragePath)
 			if got := NewScheduler(context.Background(), tt.args.config); !reflect.DeepEqual(got, tt.want) {
 				assert.Equal(t, tt.want.config, got.config)
 				assert.Equal(t, tt.want.dataStorage, got.dataStorage)
@@ -524,36 +537,86 @@ func TestScheduler_GetOutboundPool(t *testing.T) {
 
 func TestScheduler_GetPublisher(t *testing.T) {
 	type fields struct {
-		config       config.Config
-		listener     listener.Listener
-		publisher    publisher.Publisher
-		processor    *processor.Processor
-		prioritizer  *prioritizer.Prioritizer
-		dataStorage  *storage.PqStorage
-		inboundPool  *goconcurrentqueue.FIFO
-		outboundPool *goconcurrentqueue.FIFO
+		publisher publisher.Publisher
 	}
 	tests := []struct {
 		name   string
 		fields fields
-		want   *publisher.Publisher
+		want   publisher.Publisher
 	}{
-		// TODO: Add test cases.
+		{
+			name: "Check publisher getter",
+			fields: fields{
+				publisher: new(publishertest.Publisher),
+			},
+			want: new(publishertest.Publisher),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &Scheduler{
-				config:       tt.fields.config,
-				listener:     tt.fields.listener,
-				publisher:    tt.fields.publisher,
-				processor:    tt.fields.processor,
-				prioritizer:  tt.fields.prioritizer,
-				dataStorage:  tt.fields.dataStorage,
-				inboundPool:  tt.fields.inboundPool,
-				outboundPool: tt.fields.outboundPool,
+				publisher: tt.fields.publisher,
 			}
 			if got := s.GetPublisher(); !reflect.DeepEqual(got, tt.want) {
+				assert.Equal(t, tt.want, *got)
+			}
+		})
+	}
+}
+
+func TestScheduler_GetCluster(t *testing.T) {
+	type fields struct {
+		raftCluster *raft.Raft
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   *raft.Raft
+	}{
+		{
+			name: "Check cluster getter",
+			fields: fields{
+				raftCluster: new(raft.Raft),
+			},
+			want: new(raft.Raft),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &Scheduler{
+				raftCluster: tt.fields.raftCluster,
+			}
+			if got := s.GetCluster(); !reflect.DeepEqual(got, tt.want) {
 				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
+
+func TestScheduler_GetListener(t *testing.T) {
+	type fields struct {
+		listener listener.Listener
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   listener.Listener
+	}{
+		{
+			name: "Check listener getter",
+			fields: fields{
+				listener: new(listenertest.Listener),
+			},
+			want: new(listenertest.Listener),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &Scheduler{
+				listener: tt.fields.listener,
+			}
+			if got := s.GetListener(); !reflect.DeepEqual(got, tt.want) {
+				assert.Equal(t, tt.want, *got)
 			}
 		})
 	}
@@ -608,6 +671,10 @@ func TestScheduler_Run(t *testing.T) {
 					PublisherDriver:          "pubsub",
 					PubsubPublisherProjectID: "testProjectId",
 					PubsubPublisherKeyFile:   dir + "/tests/pubsub_cred_mock.json",
+					StoragePath:              getProjectPath() + "/tests/tempStorageSt1",
+					ClusterPort:              "5558",
+					ClusterNodeID:            "st1",
+					ClusterIPAddress:         "127.0.0.1",
 				},
 				inboundPool:  goconcurrentqueue.NewFIFO(),
 				outboundPool: goconcurrentqueue.NewFIFO(),
@@ -643,6 +710,10 @@ func TestScheduler_Run(t *testing.T) {
 					PublisherDriver:          "pubsub",
 					PubsubPublisherProjectID: "testProjectId",
 					PubsubPublisherKeyFile:   dir + "/tests/pubsub_cred_mock.json",
+					StoragePath:              getProjectPath() + "/tests/tempStorageSt2",
+					ClusterPort:              "5559",
+					ClusterNodeID:            "st2",
+					ClusterIPAddress:         "127.0.0.1",
 				},
 				inboundPool:  goconcurrentqueue.NewFIFO(),
 				outboundPool: goconcurrentqueue.NewFIFO(),
@@ -691,8 +762,23 @@ func TestScheduler_Run(t *testing.T) {
 
 			// mock individual context for each test
 			ctx := context.Background()
-			ctx, cancel := context.WithTimeout(ctx, time.Second*4)
+			ctx, cancel := context.WithTimeout(ctx, time.Second*6)
 			defer cancel()
+
+			_ = os.RemoveAll(tt.fields.config.StoragePath)
+			s.BootCluster(ctx)
+			defer func() {
+				_ = s.raftCluster.Shutdown()
+			}()
+
+			// bootstrap single node test cluster
+			s.raftCluster.BootstrapCluster(raft.Configuration{Servers: []raft.Server{
+				{
+					Suffrage: raft.Voter,
+					ID:       raft.ServerID(s.config.ClusterNodeID),
+					Address:  raft.ServerAddress(s.config.ClusterIPAddress + ":" + s.config.ClusterPort),
+				},
+			}})
 
 			tt.fields.config.PubsubListenerSubscriptionID = "mocklistener" + strconv.Itoa(testID)
 			tt.fields.config.PubsubPublisherTopicID = "mockpublisher" + strconv.Itoa(testID)
@@ -704,7 +790,7 @@ func TestScheduler_Run(t *testing.T) {
 			}()
 			sourcePubsubClient, topic := mockPubsubListenerClient(ctx, t, sourcePubsubServerConn, tt.fields.config)
 			pubsubListener := &listenerpubsub.Listener{}
-			_ = pubsubListener.Boot(ctx, tt.fields.config, s.inboundPool)
+			_ = pubsubListener.Boot(ctx, tt.fields.config, s.inboundPool, s.raftCluster)
 			pubsubListener.SetPubsubClient(sourcePubsubClient)
 
 			// make pubsub publisher client-server connection

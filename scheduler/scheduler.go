@@ -18,7 +18,6 @@ import (
 	"github.com/maksimru/event-scheduler/storage"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
-	"io/ioutil"
 	"net"
 	"os"
 	"time"
@@ -27,7 +26,7 @@ import (
 const (
 	raftSnapShotRetain      = 2
 	raftLogCacheSize        = 256
-	raftSnapshotThreshold   = 2024
+	raftSnapshotThreshold   = 2048
 	raftTransportTcpTimeout = 10 * time.Second
 	raftTransportMaxPool    = 10
 )
@@ -61,11 +60,11 @@ func NewScheduler(ctx context.Context, config config.Config) *Scheduler {
 	scheduler.inboundPool = goconcurrentqueue.NewFIFO()
 	scheduler.outboundPool = goconcurrentqueue.NewFIFO()
 	scheduler.dataStorage = storage.NewPqStorage()
+	scheduler.BootCluster(ctx)
 	scheduler.BootPublisher(ctx)
 	scheduler.BootPrioritizer(ctx)
 	scheduler.BootListener(ctx)
 	scheduler.BootProcessor(ctx)
-	scheduler.BootCluster(ctx)
 	return scheduler
 }
 
@@ -109,12 +108,25 @@ func (s *Scheduler) Run(ctx context.Context) error {
 		return err
 	})
 
+	// stop cluster on context
+	g.Go(func() error {
+		for {
+			select {
+			case <-ctx.Done():
+				log.Warn("context is done, stopping the cluster")
+				s.raftCluster.Shutdown()
+				return nil
+			default:
+				time.Sleep(time.Second)
+			}
+		}
+	})
+
 	return g.Wait()
 }
 
 func (s *Scheduler) BootCluster(ctx context.Context) {
-	path, _ := ioutil.TempDir("storage", "scheduler")
-	store, err := raftbadger.NewBadgerStore(path)
+	store, err := raftbadger.NewBadgerStore(s.config.StoragePath)
 	if err != nil {
 		panic("exception during badger store boot: " + err.Error())
 	}
@@ -122,11 +134,11 @@ func (s *Scheduler) BootCluster(ctx context.Context) {
 	if err != nil {
 		panic("exception during badger cache store boot: " + err.Error())
 	}
-	snapshotStore, err := raft.NewFileSnapshotStore("snapshots", raftSnapShotRetain, os.Stdout)
+	snapshotStore, err := raft.NewFileSnapshotStore(s.config.StoragePath, raftSnapShotRetain, os.Stdout)
 	if err != nil {
 		panic("exception during snapshot store boot: " + err.Error())
 	}
-	raftTransportTcpAddr := "127.0.0.1:1101"
+	raftTransportTcpAddr := s.config.ClusterIPAddress + ":" + s.config.ClusterPort
 	tcpAddr, err := net.ResolveTCPAddr("tcp", raftTransportTcpAddr)
 	transport, err := raft.NewTCPTransport(raftTransportTcpAddr, tcpAddr, raftTransportMaxPool, raftTransportTcpTimeout, os.Stdout)
 	if err != nil {
@@ -134,20 +146,19 @@ func (s *Scheduler) BootCluster(ctx context.Context) {
 	}
 	raftconfig := raft.DefaultConfig()
 	raftconfig.LogLevel = s.config.LogLevel
-	nodeHost, _ := os.Hostname()
-	raftconfig.LocalID = raft.ServerID(nodeHost)
+	raftconfig.LocalID = raft.ServerID(s.config.ClusterNodeID)
 	raftconfig.SnapshotThreshold = raftSnapshotThreshold
 	raftServer, err := raft.NewRaft(raftconfig, fsm.NewPrioritizedFSM(s.dataStorage), cacheStore, store, snapshotStore, transport)
 	if err != nil {
 		panic("exception during raft clusterization boot: " + err.Error())
 	}
 	s.raftCluster = raftServer
-	log.Info("cluster boot is finished: ", nodeHost)
+	log.Info("cluster boot is finished: ", raftconfig.LocalID)
 }
 
 func (s *Scheduler) BootProcessor(ctx context.Context) {
 	processorInstance := new(processor.Processor)
-	err := (*processorInstance).Boot(ctx, s.publisher, s.GetDataStorage())
+	err := (*processorInstance).Boot(ctx, s.publisher, s.GetDataStorage(), s.GetCluster())
 	if err != nil {
 		panic("exception during processor boot: " + err.Error())
 	}
@@ -169,14 +180,14 @@ func (s *Scheduler) BootListener(ctx context.Context) {
 	switch s.config.ListenerDriver {
 	case "pubsub":
 		listenerInstance := new(listenerpubsub.Listener)
-		err := listenerInstance.Boot(ctx, s.GetConfig(), s.GetInboundPool())
+		err := listenerInstance.Boot(ctx, s.GetConfig(), s.GetInboundPool(), s.GetCluster())
 		if err != nil {
 			panic("exception during listener boot: " + err.Error())
 		}
 		s.listener = listenerInstance
 	case "test":
 		listenerInstance := new(listenertest.Listener)
-		err := listenerInstance.Boot(ctx, s.GetConfig(), s.GetInboundPool())
+		err := listenerInstance.Boot(ctx, s.GetConfig(), s.GetInboundPool(), s.GetCluster())
 		if err != nil {
 			panic("exception during listener boot: " + err.Error())
 		}
@@ -225,6 +236,14 @@ func (s *Scheduler) GetOutboundPool() *goconcurrentqueue.FIFO {
 
 func (s *Scheduler) GetPublisher() *publisher.Publisher {
 	return &s.publisher
+}
+
+func (s *Scheduler) GetListener() *listener.Listener {
+	return &s.listener
+}
+
+func (s *Scheduler) GetCluster() *raft.Raft {
+	return s.raftCluster
 }
 
 func (s *Scheduler) GetConfig() config.Config {

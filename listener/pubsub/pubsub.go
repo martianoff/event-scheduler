@@ -4,6 +4,7 @@ import (
 	"cloud.google.com/go/pubsub"
 	"context"
 	"github.com/enriquebris/goconcurrentqueue"
+	"github.com/hashicorp/raft"
 	"github.com/maksimru/event-scheduler/config"
 	"github.com/maksimru/event-scheduler/message"
 	log "github.com/sirupsen/logrus"
@@ -17,13 +18,14 @@ type Listener struct {
 	inboundPool *goconcurrentqueue.FIFO
 	client      *pubsub.Client
 	context     context.Context
+	cluster     *raft.Raft
 }
 
-func (l *Listener) Boot(ctx context.Context, config config.Config, inboundPool *goconcurrentqueue.FIFO) error {
+func (l *Listener) Boot(ctx context.Context, config config.Config, inboundPool *goconcurrentqueue.FIFO, cluster *raft.Raft) error {
 	l.config = config
 	l.inboundPool = inboundPool
 	client, err := makePubsubClient(ctx, config)
-	l.client, l.context = client, ctx
+	l.client, l.context, l.cluster = client, ctx, cluster
 	return err
 }
 

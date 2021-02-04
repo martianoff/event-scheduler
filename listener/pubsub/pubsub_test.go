@@ -5,6 +5,7 @@ import (
 	"cloud.google.com/go/pubsub/pstest"
 	"context"
 	"github.com/enriquebris/goconcurrentqueue"
+	"github.com/hashicorp/raft"
 	"github.com/maksimru/event-scheduler/config"
 	"github.com/maksimru/event-scheduler/message"
 	"github.com/stretchr/testify/assert"
@@ -22,11 +23,13 @@ func TestListenerPubsub_Boot(t *testing.T) {
 	type fields struct {
 		config      config.Config
 		inboundPool *goconcurrentqueue.FIFO
+		cluster     *raft.Raft
 	}
 	type args struct {
 		context     context.Context
 		config      config.Config
 		inboundPool *goconcurrentqueue.FIFO
+		cluster     *raft.Raft
 	}
 	dir := getProjectPath()
 	cfg := config.Config{
@@ -45,11 +48,13 @@ func TestListenerPubsub_Boot(t *testing.T) {
 			fields: fields{
 				config:      cfg,
 				inboundPool: inboundPool,
+				cluster:     &raft.Raft{},
 			},
 			args: args{
 				context:     context.Background(),
 				config:      cfg,
 				inboundPool: inboundPool,
+				cluster:     &raft.Raft{},
 			},
 			wantErr: false,
 		},
@@ -59,11 +64,12 @@ func TestListenerPubsub_Boot(t *testing.T) {
 			l := &Listener{
 				config:      tt.fields.config,
 				inboundPool: tt.fields.inboundPool,
+				cluster:     tt.fields.cluster,
 			}
 			if !tt.wantErr {
-				assert.NoError(t, l.Boot(tt.args.context, tt.args.config, tt.args.inboundPool))
+				assert.NoError(t, l.Boot(tt.args.context, tt.args.config, tt.args.inboundPool, tt.args.cluster))
 			} else {
-				assert.Error(t, l.Boot(tt.args.context, tt.args.config, tt.args.inboundPool))
+				assert.Error(t, l.Boot(tt.args.context, tt.args.config, tt.args.inboundPool, tt.args.cluster))
 			}
 		})
 	}

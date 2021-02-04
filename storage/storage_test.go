@@ -280,3 +280,138 @@ func TestPrioritizedNodePointerMinPriorityComparator_Less(t *testing.T) {
 		})
 	}
 }
+
+func TestPqStorage_Dump(t *testing.T) {
+	type fields struct {
+		mutex       *sync.Mutex
+		dataStorage *priorityqueue.PriorityQueue
+		iterator    *doublylinkedlist.DoublyLinkedList
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		msgs    []message.Message
+		want    []message.Message
+		dequeue int
+	}{
+		{
+			name: "Check simple dump",
+			fields: fields{
+				mutex: &sync.Mutex{},
+				dataStorage: priorityqueue.NewPriorityQueue(
+					NewPrioritizedNodePointerValueList(make([]PrioritizedNodePointer, 0)),
+					NewPrioritizedNodePointerMinPriorityComparator(),
+				),
+				iterator: doublylinkedlist.NewDoublyLinkedList(),
+			},
+			msgs:    []message.Message{message.NewMessage("msg1", 2000), message.NewMessage("msg2", 1000), message.NewMessage("msg3", 2500)},
+			want:    []message.Message{message.NewMessage("msg1", 2000), message.NewMessage("msg2", 1000), message.NewMessage("msg3", 2500)},
+			dequeue: 0,
+		},
+		{
+			name: "Check dump with dequeue operation",
+			fields: fields{
+				mutex: &sync.Mutex{},
+				dataStorage: priorityqueue.NewPriorityQueue(
+					NewPrioritizedNodePointerValueList(make([]PrioritizedNodePointer, 0)),
+					NewPrioritizedNodePointerMinPriorityComparator(),
+				),
+				iterator: doublylinkedlist.NewDoublyLinkedList(),
+			},
+			msgs:    []message.Message{message.NewMessage("msg1", 2000), message.NewMessage("msg2", 1000), message.NewMessage("msg3", 2500)},
+			want:    []message.Message{message.NewMessage("msg1", 2000), message.NewMessage("msg3", 2500)},
+			dequeue: 1,
+		},
+		{
+			name: "Check dump with two dequeue operations",
+			fields: fields{
+				mutex: &sync.Mutex{},
+				dataStorage: priorityqueue.NewPriorityQueue(
+					NewPrioritizedNodePointerValueList(make([]PrioritizedNodePointer, 0)),
+					NewPrioritizedNodePointerMinPriorityComparator(),
+				),
+				iterator: doublylinkedlist.NewDoublyLinkedList(),
+			},
+			msgs:    []message.Message{message.NewMessage("msg1", 2000), message.NewMessage("msg2", 1000), message.NewMessage("msg3", 2500)},
+			want:    []message.Message{message.NewMessage("msg3", 2500)},
+			dequeue: 2,
+		},
+		{
+			name: "Check dump with empty data",
+			fields: fields{
+				mutex: &sync.Mutex{},
+				dataStorage: priorityqueue.NewPriorityQueue(
+					NewPrioritizedNodePointerValueList(make([]PrioritizedNodePointer, 0)),
+					NewPrioritizedNodePointerMinPriorityComparator(),
+				),
+				iterator: doublylinkedlist.NewDoublyLinkedList(),
+			},
+			msgs:    []message.Message{message.NewMessage("msg1", 2000), message.NewMessage("msg2", 1000), message.NewMessage("msg3", 2500)},
+			want:    []message.Message{},
+			dequeue: 3,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &PqStorage{
+				mutex:       tt.fields.mutex,
+				dataStorage: tt.fields.dataStorage,
+				iterator:    tt.fields.iterator,
+			}
+			for _, msg := range tt.msgs {
+				p.Enqueue(msg)
+			}
+			for tt.dequeue > 0 {
+				p.Dequeue()
+				tt.dequeue--
+			}
+			if got := *p.Dump(); !reflect.DeepEqual(got, tt.want) {
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
+
+func TestPqStorage_Flush(t *testing.T) {
+	type fields struct {
+		mutex       *sync.Mutex
+		dataStorage *priorityqueue.PriorityQueue
+		iterator    *doublylinkedlist.DoublyLinkedList
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		msgs   []message.Message
+		want   []message.Message
+	}{
+		{
+			name: "Check flush",
+			fields: fields{
+				mutex: &sync.Mutex{},
+				dataStorage: priorityqueue.NewPriorityQueue(
+					NewPrioritizedNodePointerValueList(make([]PrioritizedNodePointer, 0)),
+					NewPrioritizedNodePointerMinPriorityComparator(),
+				),
+				iterator: doublylinkedlist.NewDoublyLinkedList(),
+			},
+			msgs: []message.Message{message.NewMessage("msg1", 2000), message.NewMessage("msg2", 1000), message.NewMessage("msg3", 2500)},
+			want: []message.Message{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &PqStorage{
+				mutex:       tt.fields.mutex,
+				dataStorage: tt.fields.dataStorage,
+				iterator:    tt.fields.iterator,
+			}
+			for _, msg := range tt.msgs {
+				p.Enqueue(msg)
+			}
+			p.Flush()
+			assert.Equal(t, 0, p.dataStorage.GetLength())
+			assert.Equal(t, 0, p.iterator.GetLength())
+			assert.Equal(t, tt.want, *p.Dump())
+		})
+	}
+}
