@@ -24,7 +24,7 @@ const OperationPop int = 1
 
 type CommandPayload struct {
 	Operation int
-	Value     message.Message
+	Value     *message.Message
 }
 
 type ApplyResponse struct {
@@ -84,7 +84,7 @@ func (b prioritizedFSM) Apply(raftLog *raft.Log) interface{} {
 		}
 		switch payload.Operation {
 		case OperationPush:
-			b.storage.Enqueue(payload.Value)
+			b.storage.Enqueue(*payload.Value)
 			return &ApplyResponse{
 				Data: payload.Value,
 			}
