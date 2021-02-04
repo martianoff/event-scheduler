@@ -11,4 +11,8 @@ type Config struct {
 	PubsubPublisherProjectID     string `env:"PUBSUB_PUBLISHER_PROJECT_ID"`
 	PubsubPublisherTopicID       string `env:"PUBSUB_PUBLISHER_TOPIC_ID"`
 	PubsubPublisherKeyFile       string `env:"PUBSUB_PUBLISHER_KEY_FILE"`
+	StoragePath                  string `env:"STORAGE_PATH" envDefault:"storage"`
+	ClusterPort                  string `env:"CLUSTER_PORT" envDefault:"5559"`
+	ClusterNodeID                string `env:"CLUSTER_NODE_ID" envDefault:"scheduler_node"`
+	ClusterIPAddress             string `env:"CLUSTER_IP" envDefault:"127.0.0.1"`
 }
