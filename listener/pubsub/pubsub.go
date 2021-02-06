@@ -4,7 +4,6 @@ import (
 	"cloud.google.com/go/pubsub"
 	"context"
 	"github.com/enriquebris/goconcurrentqueue"
-	"github.com/hashicorp/raft"
 	"github.com/maksimru/event-scheduler/config"
 	"github.com/maksimru/event-scheduler/message"
 	log "github.com/sirupsen/logrus"
@@ -18,14 +17,14 @@ type Listener struct {
 	inboundPool *goconcurrentqueue.FIFO
 	client      *pubsub.Client
 	context     context.Context
-	cluster     *raft.Raft
+	stopFunc    context.CancelFunc
 }
 
-func (l *Listener) Boot(ctx context.Context, config config.Config, inboundPool *goconcurrentqueue.FIFO, cluster *raft.Raft) error {
-	l.config = config
-	l.inboundPool = inboundPool
-	client, err := makePubsubClient(ctx, config)
-	l.client, l.context, l.cluster = client, ctx, cluster
+func (l *Listener) Boot(ctx context.Context, config config.Config, inboundPool *goconcurrentqueue.FIFO) error {
+	l.context = ctx
+	l.config, l.inboundPool = config, inboundPool
+	client, err := makePubsubClient(l.context, config)
+	l.client = client
 	return err
 }
 
@@ -40,6 +39,14 @@ func makePubsubClient(ctx context.Context, config config.Config) (*pubsub.Client
 		return nil, err
 	}
 	return client, err
+}
+
+func (l *Listener) Stop() error {
+	if l.stopFunc != nil {
+		log.Info("listener stop called")
+		l.stopFunc()
+	}
+	return nil
 }
 
 func (l *Listener) Listen() error {
@@ -57,6 +64,7 @@ func (l *Listener) Listen() error {
 	// Dedicated context
 	pubsubContext, cancelListener := context.WithCancel(l.context)
 	defer cancelListener()
+	l.stopFunc = cancelListener
 
 	// Create a channel to handle messages to as they come in.
 	cm := make(chan *pubsub.Message)
@@ -89,6 +97,8 @@ func (l *Listener) Listen() error {
 		log.Error("listener message receive exception: ", err.Error())
 		return err
 	}
+
+	log.Info("listener stopped")
 
 	return nil
 }

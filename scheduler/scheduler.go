@@ -43,15 +43,16 @@ type InitiableScheduler interface {
 }
 
 type Scheduler struct {
-	config       config.Config
-	listener     listener.Listener
-	publisher    publisher.Publisher
-	processor    *processor.Processor
-	prioritizer  *prioritizer.Prioritizer
-	dataStorage  *storage.PqStorage
-	inboundPool  *goconcurrentqueue.FIFO
-	outboundPool *goconcurrentqueue.FIFO
-	raftCluster  *raft.Raft
+	config          config.Config
+	listener        listener.Listener
+	publisher       publisher.Publisher
+	processor       *processor.Processor
+	prioritizer     *prioritizer.Prioritizer
+	dataStorage     *storage.PqStorage
+	inboundPool     *goconcurrentqueue.FIFO
+	outboundPool    *goconcurrentqueue.FIFO
+	raftCluster     *raft.Raft
+	listenerRunning bool
 }
 
 func NewScheduler(ctx context.Context, config config.Config) *Scheduler {
@@ -60,26 +61,18 @@ func NewScheduler(ctx context.Context, config config.Config) *Scheduler {
 	scheduler.inboundPool = goconcurrentqueue.NewFIFO()
 	scheduler.outboundPool = goconcurrentqueue.NewFIFO()
 	scheduler.dataStorage = storage.NewPqStorage()
+	scheduler.BootListener(ctx)
 	scheduler.BootCluster(ctx)
 	scheduler.BootPublisher(ctx)
 	scheduler.BootPrioritizer(ctx)
-	scheduler.BootListener(ctx)
 	scheduler.BootProcessor(ctx)
+	scheduler.listenerRunning = false
 	return scheduler
 }
 
 func (s *Scheduler) Run(ctx context.Context) error {
 
 	g, ctx := errgroup.WithContext(ctx)
-
-	// listener receives scheduled jobs and saves them into the inboundPool
-	g.Go(func() error {
-		err := s.listener.Listen()
-		if err != nil {
-			log.Error("listener failure: ", err.Error())
-		}
-		return err
-	})
 
 	// prioritizer receives scheduled jobs from the inboundPool and moves them into data storage
 	g.Go(func() error {
@@ -154,6 +147,47 @@ func (s *Scheduler) BootCluster(ctx context.Context) {
 	}
 	s.raftCluster = raftServer
 	log.Info("cluster boot is finished: ", raftconfig.LocalID)
+
+	// Init watcher
+	s.WatchCluster(ctx)
+
+	// Init initial state
+	s.ClusterLeaderChangeCallback(ctx, raftServer.State() == raft.Leader)
+}
+
+func (s *Scheduler) WatchCluster(ctx context.Context) {
+	// Watch for cluster leader changes
+	go func(ctx context.Context, cluster *Scheduler) {
+	watcherloop:
+		for {
+			select {
+			case <-ctx.Done():
+				break watcherloop
+			case v := <-s.raftCluster.LeaderCh():
+				s.ClusterLeaderChangeCallback(ctx, v)
+			}
+		}
+	}(ctx, s)
+}
+
+func (s *Scheduler) ClusterLeaderChangeCallback(ctx context.Context, isLeader bool) {
+	if !isLeader && s.listenerRunning {
+		log.Info("listener stopping")
+		err := s.listener.Stop()
+		if err != nil {
+			log.Error("listener stop failure: ", err.Error())
+		}
+	} else if isLeader && !s.listenerRunning {
+		func(s *Scheduler) {
+			s.listenerRunning = true
+			log.Info("listener starting")
+			err := s.listener.Listen()
+			s.listenerRunning = false
+			if err != nil {
+				log.Error("listener failure: ", err.Error())
+			}
+		}(s)
+	}
 }
 
 func (s *Scheduler) BootProcessor(ctx context.Context) {
@@ -180,14 +214,14 @@ func (s *Scheduler) BootListener(ctx context.Context) {
 	switch s.config.ListenerDriver {
 	case "pubsub":
 		listenerInstance := new(listenerpubsub.Listener)
-		err := listenerInstance.Boot(ctx, s.GetConfig(), s.GetInboundPool(), s.GetCluster())
+		err := listenerInstance.Boot(ctx, s.GetConfig(), s.GetInboundPool())
 		if err != nil {
 			panic("exception during listener boot: " + err.Error())
 		}
 		s.listener = listenerInstance
 	case "test":
 		listenerInstance := new(listenertest.Listener)
-		err := listenerInstance.Boot(ctx, s.GetConfig(), s.GetInboundPool(), s.GetCluster())
+		err := listenerInstance.Boot(ctx, s.GetConfig(), s.GetInboundPool())
 		if err != nil {
 			panic("exception during listener boot: " + err.Error())
 		}
@@ -214,6 +248,14 @@ func (s *Scheduler) BootPublisher(ctx context.Context) {
 		if err != nil {
 			panic("exception during publisher boot: " + err.Error())
 		}
+		s.publisher = publisherInstance
+	case "test_w":
+		publisherInstance := new(publishertest.Publisher)
+		err := publisherInstance.Boot(ctx, s.GetConfig(), s.GetOutboundPool())
+		if err != nil {
+			panic("exception during publisher boot: " + err.Error())
+		}
+		publisherInstance.WrongConfig()
 		s.publisher = publisherInstance
 	default:
 		log.Warn("selected publisher driver is not yet supported")

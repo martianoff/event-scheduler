@@ -44,7 +44,7 @@ func TestNewScheduler(t *testing.T) {
 					ListenerDriver:   "test",
 					PublisherDriver:  "test",
 					StoragePath:      getProjectPath() + "/tests/tempStorageNs1",
-					ClusterPort:      "5555",
+					ClusterPort:      "5554",
 					ClusterNodeID:    "sc1",
 					ClusterIPAddress: "127.0.0.1",
 				},
@@ -54,7 +54,7 @@ func TestNewScheduler(t *testing.T) {
 					ListenerDriver:   "test",
 					PublisherDriver:  "test",
 					StoragePath:      getProjectPath() + "/tests/tempStorageNs1",
-					ClusterPort:      "5555",
+					ClusterPort:      "5554",
 					ClusterNodeID:    "sc1",
 					ClusterIPAddress: "127.0.0.1",
 				},
@@ -790,7 +790,7 @@ func TestScheduler_Run(t *testing.T) {
 			}()
 			sourcePubsubClient, topic := mockPubsubListenerClient(ctx, t, sourcePubsubServerConn, tt.fields.config)
 			pubsubListener := &listenerpubsub.Listener{}
-			_ = pubsubListener.Boot(ctx, tt.fields.config, s.inboundPool, s.raftCluster)
+			_ = pubsubListener.Boot(ctx, tt.fields.config, s.inboundPool)
 			pubsubListener.SetPubsubClient(sourcePubsubClient)
 
 			// make pubsub publisher client-server connection
@@ -840,6 +840,86 @@ func TestScheduler_Run(t *testing.T) {
 				assert.Error(t, err)
 			}
 
+		})
+	}
+}
+
+func TestScheduler_ClusterLeaderChangeCallback(t *testing.T) {
+	type fields struct {
+		config          config.Config
+		listener        listener.Listener
+		publisher       publisher.Publisher
+		processor       *processor.Processor
+		prioritizer     *prioritizer.Prioritizer
+		dataStorage     *storage.PqStorage
+		inboundPool     *goconcurrentqueue.FIFO
+		outboundPool    *goconcurrentqueue.FIFO
+		raftCluster     *raft.Raft
+		listenerRunning bool
+	}
+	type args struct {
+		isLeader bool
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+	}{
+		{
+			name: "Check listener stops on lose leadership",
+			fields: fields{
+				config: config.Config{
+					ListenerDriver:   "test",
+					PublisherDriver:  "test",
+					StoragePath:      getProjectPath() + "/tests/tempStorageLt1",
+					ClusterPort:      "5553",
+					ClusterNodeID:    "lt1",
+					ClusterIPAddress: "127.0.0.1",
+				},
+				inboundPool:  goconcurrentqueue.NewFIFO(),
+				outboundPool: goconcurrentqueue.NewFIFO(),
+				dataStorage:  storage.NewPqStorage(),
+			},
+			args: args{
+				isLeader: false,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &Scheduler{
+				config:       tt.fields.config,
+				inboundPool:  tt.fields.inboundPool,
+				outboundPool: tt.fields.outboundPool,
+				dataStorage:  tt.fields.dataStorage,
+			}
+
+			// mock individual context for each test
+			ctx := context.Background()
+			ctx, cancel := context.WithTimeout(ctx, time.Second*6)
+			defer cancel()
+
+			_ = os.RemoveAll(tt.fields.config.StoragePath)
+			s.BootListener(ctx)
+			s.BootCluster(ctx)
+			defer func() {
+				_ = s.raftCluster.Shutdown()
+			}()
+
+			// bootstrap single node test cluster
+			s.raftCluster.BootstrapCluster(raft.Configuration{Servers: []raft.Server{
+				{
+					Suffrage: raft.Voter,
+					ID:       raft.ServerID(s.config.ClusterNodeID),
+					Address:  raft.ServerAddress(s.config.ClusterIPAddress + ":" + s.config.ClusterPort),
+				},
+			}})
+
+			time.Sleep(time.Second * 2)
+			assert.Equal(t, true, s.listenerRunning)
+			s.ClusterLeaderChangeCallback(ctx, tt.args.isLeader)
+			time.Sleep(time.Second * 2)
+			assert.Equal(t, false, s.listenerRunning)
 		})
 	}
 }
