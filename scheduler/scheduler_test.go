@@ -41,22 +41,20 @@ func TestNewScheduler(t *testing.T) {
 			name: "Test scheduler constructor",
 			args: args{
 				config: config.Config{
-					ListenerDriver:   "test",
-					PublisherDriver:  "test",
-					StoragePath:      getProjectPath() + "/tests/tempStorageNs1",
-					ClusterPort:      "5554",
-					ClusterNodeID:    "sc1",
-					ClusterIPAddress: "127.0.0.1",
+					ListenerDriver:  "test",
+					PublisherDriver: "test",
+					StoragePath:     getProjectPath() + "/tests/tempStorageNs1",
+					ClusterNodePort: "5554",
+					ClusterNodeHost: "127.0.0.1",
 				},
 			},
 			want: &Scheduler{
 				config: config.Config{
-					ListenerDriver:   "test",
-					PublisherDriver:  "test",
-					StoragePath:      getProjectPath() + "/tests/tempStorageNs1",
-					ClusterPort:      "5554",
-					ClusterNodeID:    "sc1",
-					ClusterIPAddress: "127.0.0.1",
+					ListenerDriver:  "test",
+					PublisherDriver: "test",
+					StoragePath:     getProjectPath() + "/tests/tempStorageNs1",
+					ClusterNodePort: "5554",
+					ClusterNodeHost: "127.0.0.1",
 				},
 				listener:     nil,
 				publisher:    nil,
@@ -672,9 +670,10 @@ func TestScheduler_Run(t *testing.T) {
 					PubsubPublisherProjectID: "testProjectId",
 					PubsubPublisherKeyFile:   dir + "/tests/pubsub_cred_mock.json",
 					StoragePath:              getProjectPath() + "/tests/tempStorageSt1",
-					ClusterPort:              "5558",
-					ClusterNodeID:            "st1",
-					ClusterIPAddress:         "127.0.0.1",
+					ClusterNodePort:          "5558",
+					ClusterNodeHost:          "127.0.0.1",
+					ClusterInitialLeader:     "127.0.0.1:5558",
+					ClusterInitialNodes:      "127.0.0.1:5558",
 				},
 				inboundPool:  goconcurrentqueue.NewFIFO(),
 				outboundPool: goconcurrentqueue.NewFIFO(),
@@ -711,9 +710,10 @@ func TestScheduler_Run(t *testing.T) {
 					PubsubPublisherProjectID: "testProjectId",
 					PubsubPublisherKeyFile:   dir + "/tests/pubsub_cred_mock.json",
 					StoragePath:              getProjectPath() + "/tests/tempStorageSt2",
-					ClusterPort:              "5559",
-					ClusterNodeID:            "st2",
-					ClusterIPAddress:         "127.0.0.1",
+					ClusterNodePort:          "5559",
+					ClusterNodeHost:          "127.0.0.1",
+					ClusterInitialLeader:     "127.0.0.1:5559",
+					ClusterInitialNodes:      "127.0.0.1:5559",
 				},
 				inboundPool:  goconcurrentqueue.NewFIFO(),
 				outboundPool: goconcurrentqueue.NewFIFO(),
@@ -770,15 +770,6 @@ func TestScheduler_Run(t *testing.T) {
 			defer func() {
 				_ = s.raftCluster.Shutdown()
 			}()
-
-			// bootstrap single node test cluster
-			s.raftCluster.BootstrapCluster(raft.Configuration{Servers: []raft.Server{
-				{
-					Suffrage: raft.Voter,
-					ID:       raft.ServerID(s.config.ClusterNodeID),
-					Address:  raft.ServerAddress(s.config.ClusterIPAddress + ":" + s.config.ClusterPort),
-				},
-			}})
 
 			tt.fields.config.PubsubListenerSubscriptionID = "mocklistener" + strconv.Itoa(testID)
 			tt.fields.config.PubsubPublisherTopicID = "mockpublisher" + strconv.Itoa(testID)
@@ -869,12 +860,13 @@ func TestScheduler_ClusterLeaderChangeCallback(t *testing.T) {
 			name: "Check listener stops on lose leadership",
 			fields: fields{
 				config: config.Config{
-					ListenerDriver:   "test",
-					PublisherDriver:  "test",
-					StoragePath:      getProjectPath() + "/tests/tempStorageLt1",
-					ClusterPort:      "5553",
-					ClusterNodeID:    "lt1",
-					ClusterIPAddress: "127.0.0.1",
+					ListenerDriver:       "test",
+					PublisherDriver:      "test",
+					StoragePath:          getProjectPath() + "/tests/tempStorageLt1",
+					ClusterNodePort:      "5553",
+					ClusterNodeHost:      "127.0.0.1",
+					ClusterInitialLeader: "127.0.0.1:5553",
+					ClusterInitialNodes:  "127.0.0.1:5553",
 				},
 				inboundPool:  goconcurrentqueue.NewFIFO(),
 				outboundPool: goconcurrentqueue.NewFIFO(),
@@ -905,15 +897,6 @@ func TestScheduler_ClusterLeaderChangeCallback(t *testing.T) {
 			defer func() {
 				_ = s.raftCluster.Shutdown()
 			}()
-
-			// bootstrap single node test cluster
-			s.raftCluster.BootstrapCluster(raft.Configuration{Servers: []raft.Server{
-				{
-					Suffrage: raft.Voter,
-					ID:       raft.ServerID(s.config.ClusterNodeID),
-					Address:  raft.ServerAddress(s.config.ClusterIPAddress + ":" + s.config.ClusterPort),
-				},
-			}})
 
 			time.Sleep(time.Second * 2)
 			assert.Equal(t, true, s.listenerRunning)

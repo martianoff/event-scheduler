@@ -2,6 +2,8 @@ package scheduler
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"github.com/BBVA/raft-badger"
 	"github.com/enriquebris/goconcurrentqueue"
 	"github.com/hashicorp/raft"
@@ -20,6 +22,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"net"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -131,15 +134,18 @@ func (s *Scheduler) BootCluster(ctx context.Context) {
 	if err != nil {
 		panic("exception during snapshot store boot: " + err.Error())
 	}
-	raftTransportTcpAddr := s.config.ClusterIPAddress + ":" + s.config.ClusterPort
+	raftTransportTcpAddr := s.config.ClusterNodeHost + ":" + s.config.ClusterNodePort
 	tcpAddr, err := net.ResolveTCPAddr("tcp", raftTransportTcpAddr)
+	if err != nil {
+		panic("unable to resolve cluster node address: " + err.Error())
+	}
 	transport, err := raft.NewTCPTransport(raftTransportTcpAddr, tcpAddr, raftTransportMaxPool, raftTransportTcpTimeout, os.Stdout)
 	if err != nil {
 		panic("exception during tcp transport boot: " + err.Error())
 	}
 	raftconfig := raft.DefaultConfig()
 	raftconfig.LogLevel = s.config.LogLevel
-	raftconfig.LocalID = raft.ServerID(s.config.ClusterNodeID)
+	raftconfig.LocalID = raft.ServerID(getMD5Hash(raftTransportTcpAddr))
 	raftconfig.SnapshotThreshold = raftSnapshotThreshold
 	raftServer, err := raft.NewRaft(raftconfig, fsm.NewPrioritizedFSM(s.dataStorage), cacheStore, store, snapshotStore, transport)
 	if err != nil {
@@ -152,7 +158,26 @@ func (s *Scheduler) BootCluster(ctx context.Context) {
 	s.WatchCluster(ctx)
 
 	// Init initial state
-	s.ClusterLeaderChangeCallback(ctx, raftServer.State() == raft.Leader)
+	initialClusterNodes := strings.Split(s.config.ClusterInitialNodes, ",")
+	initialClusterServers := make([]raft.Server, len(initialClusterNodes))
+	for k, nodeHost := range initialClusterNodes {
+		suffrage := raft.Nonvoter
+		// set default leader
+		if nodeHost == s.config.ClusterInitialLeader {
+			suffrage = raft.Voter
+		}
+		initialClusterServers[k] = raft.Server{
+			Suffrage: suffrage,
+			ID:       raft.ServerID(getMD5Hash(nodeHost)),
+			Address:  raft.ServerAddress(nodeHost),
+		}
+	}
+	s.raftCluster.BootstrapCluster(raft.Configuration{Servers: initialClusterServers})
+}
+
+func getMD5Hash(text string) string {
+	hash := md5.Sum([]byte(text))
+	return hex.EncodeToString(hash[:])
 }
 
 func (s *Scheduler) WatchCluster(ctx context.Context) {

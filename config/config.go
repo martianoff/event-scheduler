@@ -12,7 +12,8 @@ type Config struct {
 	PubsubPublisherTopicID       string `env:"PUBSUB_PUBLISHER_TOPIC_ID"`
 	PubsubPublisherKeyFile       string `env:"PUBSUB_PUBLISHER_KEY_FILE"`
 	StoragePath                  string `env:"STORAGE_PATH" envDefault:"storage"`
-	ClusterPort                  string `env:"CLUSTER_PORT" envDefault:"5559"`
-	ClusterNodeID                string `env:"CLUSTER_NODE_ID" envDefault:"scheduler_node"`
-	ClusterIPAddress             string `env:"CLUSTER_IP" envDefault:"127.0.0.1"`
+	ClusterNodeHost              string `env:"CLUSTER_NODE_HOST" envDefault:"localhost"`
+	ClusterNodePort              string `env:"CLUSTER_NODE_PORT" envDefault:"5559"`
+	ClusterInitialNodes          string `env:"CLUSTER_INITIAL_NODES" envDefault:"localhost:5559"`
+	ClusterInitialLeader         string `env:"CLUSTER_INITIAL_LEADER" envDefault:"localhost:5559"`
 }
