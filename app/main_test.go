@@ -120,39 +120,74 @@ func getProjectPath() string {
 func TestMainFunc(t *testing.T) {
 	dir := getProjectPath()
 	tests := []struct {
-		name         string
-		expectedExit int
-		env          map[string]string
+		name             string
+		expectedExitCode int
+		expectedPanic    bool
+		env              map[string]string
+		removeDir        string
 	}{
 		{
-			name:         "Test wrongly configured application launch",
-			expectedExit: 1,
+			name:             "Test wrongly configured application launch",
+			expectedExitCode: 1,
+			expectedPanic:    false,
 			env: map[string]string{
-				"LISTENER_DRIVER":           "pubsub",
-				"PUBLISHER_DRIVER":          "pubsub",
-				"PUBSUB_LISTENER_KEY_FILE":  dir + "/tests/pubsub_cred_mock.json",
-				"PUBSUB_PUBLISHER_KEY_FILE": dir + "/tests/pubsub_cred_mock.json",
+				"LISTENER_DRIVER":        "test",
+				"PUBLISHER_DRIVER":       "test_w",
+				"STORAGE_PATH":           dir + "/tests/tempStorage1",
+				"CLUSTER_NODE_PORT":      "5555",
+				"CLUSTER_INITIAL_NODES":  "localhost:5555",
+				"CLUSTER_INITIAL_LEADER": "localhost:5555",
 			},
+			removeDir: dir + "/tests/tempStorage1",
 		},
 		{
-			name:         "Test correctly configured application launch",
-			expectedExit: 0,
+			name:             "Test with unsupported drivers",
+			expectedExitCode: 1,
+			expectedPanic:    true,
 			env: map[string]string{
-				"LISTENER_DRIVER":  "test",
-				"PUBLISHER_DRIVER": "test",
+				"LISTENER_DRIVER":           "amqp",
+				"PUBLISHER_DRIVER":          "amqp",
+				"PUBSUB_LISTENER_KEY_FILE":  dir + "/tests/pubsub_cred_mock.json",
+				"PUBSUB_PUBLISHER_KEY_FILE": dir + "/tests/pubsub_cred_mock.json",
+				"STORAGE_PATH":              dir + "/tests/tempStorage2",
+				"CLUSTER_NODE_PORT":         "5556",
+				"CLUSTER_INITIAL_NODES":     "localhost:5556",
+				"CLUSTER_INITIAL_LEADER":    "localhost:5556",
 			},
+			removeDir: dir + "/tests/tempStorage2",
+		},
+		{
+			name:             "Test correctly configured application launch",
+			expectedExitCode: 0,
+			expectedPanic:    false,
+			env: map[string]string{
+				"LISTENER_DRIVER":        "test",
+				"PUBLISHER_DRIVER":       "test",
+				"STORAGE_PATH":           dir + "/tests/tempStorage3",
+				"CLUSTER_NODE_PORT":      "5557",
+				"CLUSTER_INITIAL_NODES":  "localhost:5557",
+				"CLUSTER_INITIAL_LEADER": "localhost:5557",
+			},
+			removeDir: dir + "/tests/tempStorage3",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			ctx, cancel := context.WithTimeout(ctx, time.Second*1)
+			ctx, cancel := context.WithTimeout(ctx, time.Second*5)
 			defer cancel()
 			// mock env vars
+			_ = os.RemoveAll(tt.removeDir)
 			for k, v := range tt.env {
 				_ = os.Setenv(k, v)
 			}
-			assert.Equal(t, tt.expectedExit, app(ctx))
+			if !tt.expectedPanic {
+				assert.Equal(t, tt.expectedExitCode, app(ctx))
+			} else {
+				assert.Panics(t, func() {
+					app(ctx)
+				})
+			}
 		})
 	}
 }

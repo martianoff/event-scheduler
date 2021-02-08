@@ -1,43 +1,44 @@
 package prioritizer
 
 import (
-	"context"
-	"github.com/enriquebris/goconcurrentqueue"
-	"github.com/maksimru/event-scheduler/storage"
-	"github.com/maksimru/go-hpds/priorityqueue"
+	"encoding/json"
+	"errors"
+	"github.com/hashicorp/raft"
+	"github.com/maksimru/event-scheduler/fsm"
+	"github.com/maksimru/event-scheduler/message"
 	log "github.com/sirupsen/logrus"
 	"time"
 )
 
 type Prioritizer struct {
-	inboundPool *goconcurrentqueue.FIFO
-	dataStorage *storage.PqStorage
-	context     context.Context
+	cluster *raft.Raft
 }
 
-func (p *Prioritizer) Process() error {
-	for {
-		select {
-		case <-p.context.Done():
-			log.Warn("prioritizer is stopped")
-			return nil
-		default:
-		}
-		if p.inboundPool.GetLen() == 0 {
-			log.Trace("prioritizer queue is empty")
-			time.Sleep(time.Second)
-			continue
-		}
-		message, _ := p.inboundPool.Dequeue()
-		prioritizedMsg := message.(priorityqueue.StringPrioritizedValue)
-		p.dataStorage.Enqueue(prioritizedMsg)
-		log.Trace("prioritizer message pushed to the storage: ", prioritizedMsg.GetValue(), " scheduled at ", prioritizedMsg.GetPriority())
+func (p *Prioritizer) Persist(persistedMsg message.Message) error {
+	// push through FSM
+	opPayload := fsm.CommandPayload{
+		Operation: fsm.OperationPush,
+		Value:     &persistedMsg,
 	}
+	opPayloadData, err := json.Marshal(opPayload)
+	if err != nil {
+		log.Error("prioritizer error preparing saving data payload: ", err.Error())
+		return err
+	}
+	applyFuture := p.cluster.Apply(opPayloadData, 500*time.Millisecond)
+	if err := applyFuture.Error(); err != nil {
+		log.Error("prioritizer error persisting data in raft cluster: ", err.Error())
+		return err
+	}
+	_, ok := applyFuture.Response().(*fsm.ApplyResponse)
+	if !ok {
+		log.Error("prioritizer error parsing apply response")
+		return errors.New("fsm response failed")
+	}
+	return nil
 }
 
-func (p *Prioritizer) Boot(ctx context.Context, inboundPool *goconcurrentqueue.FIFO, dataStorage *storage.PqStorage) error {
-	p.context = ctx
-	p.inboundPool = inboundPool
-	p.dataStorage = dataStorage
+func (p *Prioritizer) Boot(cluster *raft.Raft) error {
+	p.cluster = cluster
 	return nil
 }

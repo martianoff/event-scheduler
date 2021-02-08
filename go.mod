@@ -5,11 +5,14 @@ go 1.15
 require (
 	cloud.google.com/go v0.74.0 // indirect
 	cloud.google.com/go/pubsub v1.9.1
+	github.com/BBVA/raft-badger v1.0.2
 	github.com/caarlos0/env/v6 v6.4.0
 	github.com/enriquebris/goconcurrentqueue v0.6.0
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
+	github.com/hashicorp/golang-lru v0.5.1 // indirect
+	github.com/hashicorp/raft v1.2.0
 	github.com/joonix/log v0.0.0-20200409080653-9c1d2ceb5f1d
-	github.com/maksimru/go-hpds v1.9.1
+	github.com/maksimru/go-hpds v1.10.0
 	github.com/sirupsen/logrus v1.7.0
 	github.com/stretchr/testify v1.6.1
 	golang.org/x/net v0.0.0-20201224014010-6772e930b67b // indirect

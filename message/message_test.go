@@ -17,7 +17,7 @@ func TestMessage_GetAvailableAt(t *testing.T) {
 		want   int
 	}{
 		{
-			name: "Zero availableAt",
+			name: "Zero AvailableAt",
 			fields: fields{
 				availableAt: 0,
 				body:        "foo",
@@ -25,7 +25,7 @@ func TestMessage_GetAvailableAt(t *testing.T) {
 			want: 0,
 		},
 		{
-			name: "Nonzero availableAt",
+			name: "Nonzero AvailableAt",
 			fields: fields{
 				availableAt: 10000,
 				body:        "foo",
@@ -36,8 +36,8 @@ func TestMessage_GetAvailableAt(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			msg := Message{
-				availableAt: tt.fields.availableAt,
-				body:        tt.fields.body,
+				AvailableAt: tt.fields.availableAt,
+				Body:        tt.fields.body,
 			}
 			if got := msg.GetAvailableAt(); got != tt.want {
 				assert.Equal(t, tt.want, got)
@@ -57,7 +57,7 @@ func TestMessage_GetBody(t *testing.T) {
 		want   interface{}
 	}{
 		{
-			name: "Empty body",
+			name: "Empty Body",
 			fields: fields{
 				availableAt: 1000,
 				body:        "",
@@ -65,7 +65,7 @@ func TestMessage_GetBody(t *testing.T) {
 			want: "",
 		},
 		{
-			name: "Nonempty body",
+			name: "Nonempty Body",
 			fields: fields{
 				availableAt: 10000,
 				body:        "foo",
@@ -76,8 +76,8 @@ func TestMessage_GetBody(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			msg := Message{
-				availableAt: tt.fields.availableAt,
-				body:        tt.fields.body,
+				AvailableAt: tt.fields.availableAt,
+				Body:        tt.fields.body,
 			}
 			if got := msg.GetBody(); !reflect.DeepEqual(got, tt.want) {
 				assert.Equal(t, tt.want, got)
@@ -97,14 +97,14 @@ func TestNewMessage(t *testing.T) {
 		want Message
 	}{
 		{
-			name: "Message with string body",
+			name: "Message with string Body",
 			args: args{
 				availableAt: 1000,
 				body:        "foo",
 			},
 			want: Message{
-				availableAt: 1000,
-				body:        "foo",
+				AvailableAt: 1000,
+				Body:        "foo",
 			},
 		},
 	}

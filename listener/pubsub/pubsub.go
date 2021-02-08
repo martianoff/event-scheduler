@@ -3,9 +3,9 @@ package pubsub
 import (
 	"cloud.google.com/go/pubsub"
 	"context"
-	"github.com/enriquebris/goconcurrentqueue"
 	"github.com/maksimru/event-scheduler/config"
-	"github.com/maksimru/go-hpds/priorityqueue"
+	"github.com/maksimru/event-scheduler/message"
+	"github.com/maksimru/event-scheduler/prioritizer"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/api/option"
 	"runtime"
@@ -14,16 +14,16 @@ import (
 
 type Listener struct {
 	config      config.Config
-	inboundPool *goconcurrentqueue.FIFO
 	client      *pubsub.Client
 	context     context.Context
+	stopFunc    context.CancelFunc
+	prioritizer *prioritizer.Prioritizer
 }
 
-func (l *Listener) Boot(ctx context.Context, config config.Config, inboundPool *goconcurrentqueue.FIFO) error {
-	l.config = config
-	l.inboundPool = inboundPool
-	client, err := makePubsubClient(ctx, config)
-	l.client, l.context = client, ctx
+func (l *Listener) Boot(ctx context.Context, config config.Config, prioritizer *prioritizer.Prioritizer) error {
+	l.context, l.config = ctx, config
+	client, err := makePubsubClient(l.context, config)
+	l.client, l.prioritizer = client, prioritizer
 	return err
 }
 
@@ -38,6 +38,14 @@ func makePubsubClient(ctx context.Context, config config.Config) (*pubsub.Client
 		return nil, err
 	}
 	return client, err
+}
+
+func (l *Listener) Stop() error {
+	if l.stopFunc != nil {
+		log.Info("listener stop called")
+		l.stopFunc()
+	}
+	return nil
 }
 
 func (l *Listener) Listen() error {
@@ -55,6 +63,7 @@ func (l *Listener) Listen() error {
 	// Dedicated context
 	pubsubContext, cancelListener := context.WithCancel(l.context)
 	defer cancelListener()
+	l.stopFunc = cancelListener
 
 	// Create a channel to handle messages to as they come in.
 	cm := make(chan *pubsub.Message)
@@ -69,9 +78,11 @@ func (l *Listener) Listen() error {
 				if err != nil {
 					log.Error("listener unable to read available_at attribute: ", err.Error())
 				} else {
-					err = l.inboundPool.Enqueue(priorityqueue.NewStringPrioritizedValue(string(msg.Data), priority))
+					err := l.prioritizer.Persist(message.NewMessage(string(msg.Data), priority))
 					if err != nil {
-						log.Error("listener inbound pool enqueue exception: ", err.Error())
+						log.Warn("listener is unable to persist received message")
+						// do not ack the message for strong consistency
+						continue
 					}
 				}
 			}
@@ -87,6 +98,8 @@ func (l *Listener) Listen() error {
 		log.Error("listener message receive exception: ", err.Error())
 		return err
 	}
+
+	log.Info("listener stopped")
 
 	return nil
 }

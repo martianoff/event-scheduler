@@ -5,17 +5,21 @@ import (
 	"cloud.google.com/go/pubsub/pstest"
 	"context"
 	"github.com/enriquebris/goconcurrentqueue"
+	"github.com/hashicorp/raft"
 	"github.com/maksimru/event-scheduler/config"
 	"github.com/maksimru/event-scheduler/listener"
 	listenerpubsub "github.com/maksimru/event-scheduler/listener/pubsub"
+	listenertest "github.com/maksimru/event-scheduler/listener/test"
 	"github.com/maksimru/event-scheduler/prioritizer"
 	"github.com/maksimru/event-scheduler/processor"
 	"github.com/maksimru/event-scheduler/publisher"
 	publisherpubsub "github.com/maksimru/event-scheduler/publisher/pubsub"
+	publishertest "github.com/maksimru/event-scheduler/publisher/test"
 	"github.com/maksimru/event-scheduler/storage"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
+	"os"
 	"path"
 	"reflect"
 	"runtime"
@@ -39,29 +43,34 @@ func TestNewScheduler(t *testing.T) {
 				config: config.Config{
 					ListenerDriver:  "test",
 					PublisherDriver: "test",
+					StoragePath:     getProjectPath() + "/tests/tempStorageNs1",
+					ClusterNodePort: "5554",
+					ClusterNodeHost: "localhost",
 				},
 			},
 			want: &Scheduler{
 				config: config.Config{
 					ListenerDriver:  "test",
 					PublisherDriver: "test",
+					StoragePath:     getProjectPath() + "/tests/tempStorageNs1",
+					ClusterNodePort: "5554",
+					ClusterNodeHost: "localhost",
 				},
 				listener:     nil,
 				publisher:    nil,
 				processor:    nil,
 				prioritizer:  nil,
 				dataStorage:  storage.NewPqStorage(),
-				inboundPool:  goconcurrentqueue.NewFIFO(),
 				outboundPool: goconcurrentqueue.NewFIFO(),
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			_ = os.RemoveAll(tt.args.config.StoragePath)
 			if got := NewScheduler(context.Background(), tt.args.config); !reflect.DeepEqual(got, tt.want) {
 				assert.Equal(t, tt.want.config, got.config)
 				assert.Equal(t, tt.want.dataStorage, got.dataStorage)
-				assert.Equal(t, reflect.TypeOf(tt.want.inboundPool), reflect.TypeOf(got.inboundPool))
 				assert.Equal(t, reflect.TypeOf(tt.want.outboundPool), reflect.TypeOf(got.outboundPool))
 			}
 		})
@@ -82,7 +91,6 @@ func TestScheduler_BootListener(t *testing.T) {
 		processor    *processor.Processor
 		prioritizer  *prioritizer.Prioritizer
 		dataStorage  *storage.PqStorage
-		inboundPool  *goconcurrentqueue.FIFO
 		outboundPool *goconcurrentqueue.FIFO
 	}
 	dir := getProjectPath()
@@ -112,7 +120,6 @@ func TestScheduler_BootListener(t *testing.T) {
 				processor:    nil,
 				prioritizer:  nil,
 				dataStorage:  nil,
-				inboundPool:  nil,
 				outboundPool: nil,
 			},
 			want:      nil,
@@ -131,7 +138,6 @@ func TestScheduler_BootListener(t *testing.T) {
 				processor:    nil,
 				prioritizer:  nil,
 				dataStorage:  nil,
-				inboundPool:  nil,
 				outboundPool: nil,
 			},
 			want:      &listenerpubsub.Listener{},
@@ -147,7 +153,6 @@ func TestScheduler_BootListener(t *testing.T) {
 				processor:    tt.fields.processor,
 				prioritizer:  tt.fields.prioritizer,
 				dataStorage:  tt.fields.dataStorage,
-				inboundPool:  tt.fields.inboundPool,
 				outboundPool: tt.fields.outboundPool,
 			}
 			if !tt.wantPanic {
@@ -193,7 +198,6 @@ func TestScheduler_BootPrioritizer(t *testing.T) {
 				processor:    nil,
 				prioritizer:  nil,
 				dataStorage:  storage.NewPqStorage(),
-				inboundPool:  goconcurrentqueue.NewFIFO(),
 				outboundPool: nil,
 			},
 			wantPanic: false,
@@ -208,7 +212,6 @@ func TestScheduler_BootPrioritizer(t *testing.T) {
 				processor:    tt.fields.processor,
 				prioritizer:  tt.fields.prioritizer,
 				dataStorage:  tt.fields.dataStorage,
-				inboundPool:  tt.fields.inboundPool,
 				outboundPool: tt.fields.outboundPool,
 			}
 			if !tt.wantPanic {
@@ -232,7 +235,6 @@ func TestScheduler_BootProcessor(t *testing.T) {
 		processor    *processor.Processor
 		prioritizer  *prioritizer.Prioritizer
 		dataStorage  *storage.PqStorage
-		inboundPool  *goconcurrentqueue.FIFO
 		outboundPool *goconcurrentqueue.FIFO
 	}
 	tests := []struct {
@@ -249,7 +251,6 @@ func TestScheduler_BootProcessor(t *testing.T) {
 				processor:    nil,
 				prioritizer:  nil,
 				dataStorage:  storage.NewPqStorage(),
-				inboundPool:  nil,
 				outboundPool: nil,
 			},
 			wantPanic: false,
@@ -264,7 +265,6 @@ func TestScheduler_BootProcessor(t *testing.T) {
 				processor:    tt.fields.processor,
 				prioritizer:  tt.fields.prioritizer,
 				dataStorage:  tt.fields.dataStorage,
-				inboundPool:  tt.fields.inboundPool,
 				outboundPool: tt.fields.outboundPool,
 			}
 			if !tt.wantPanic {
@@ -288,7 +288,6 @@ func TestScheduler_BootPublisher(t *testing.T) {
 		processor    *processor.Processor
 		prioritizer  *prioritizer.Prioritizer
 		dataStorage  *storage.PqStorage
-		inboundPool  *goconcurrentqueue.FIFO
 		outboundPool *goconcurrentqueue.FIFO
 	}
 	dir := getProjectPath()
@@ -318,7 +317,6 @@ func TestScheduler_BootPublisher(t *testing.T) {
 				processor:    nil,
 				prioritizer:  nil,
 				dataStorage:  nil,
-				inboundPool:  nil,
 				outboundPool: nil,
 			},
 			want:      nil,
@@ -337,7 +335,6 @@ func TestScheduler_BootPublisher(t *testing.T) {
 				processor:    nil,
 				prioritizer:  nil,
 				dataStorage:  nil,
-				inboundPool:  nil,
 				outboundPool: nil,
 			},
 			want:      &publisherpubsub.Publisher{},
@@ -353,7 +350,6 @@ func TestScheduler_BootPublisher(t *testing.T) {
 				processor:    tt.fields.processor,
 				prioritizer:  tt.fields.prioritizer,
 				dataStorage:  tt.fields.dataStorage,
-				inboundPool:  tt.fields.inboundPool,
 				outboundPool: tt.fields.outboundPool,
 			}
 			if !tt.wantPanic {
@@ -382,7 +378,6 @@ func TestScheduler_GetConfig(t *testing.T) {
 		processor    *processor.Processor
 		prioritizer  *prioritizer.Prioritizer
 		dataStorage  *storage.PqStorage
-		inboundPool  *goconcurrentqueue.FIFO
 		outboundPool *goconcurrentqueue.FIFO
 	}
 	tests := []struct {
@@ -401,7 +396,6 @@ func TestScheduler_GetConfig(t *testing.T) {
 				processor:    tt.fields.processor,
 				prioritizer:  tt.fields.prioritizer,
 				dataStorage:  tt.fields.dataStorage,
-				inboundPool:  tt.fields.inboundPool,
 				outboundPool: tt.fields.outboundPool,
 			}
 			if got := s.GetConfig(); !reflect.DeepEqual(got, tt.want) {
@@ -419,7 +413,6 @@ func TestScheduler_GetDataStorage(t *testing.T) {
 		processor    *processor.Processor
 		prioritizer  *prioritizer.Prioritizer
 		dataStorage  *storage.PqStorage
-		inboundPool  *goconcurrentqueue.FIFO
 		outboundPool *goconcurrentqueue.FIFO
 	}
 	tests := []struct {
@@ -438,47 +431,9 @@ func TestScheduler_GetDataStorage(t *testing.T) {
 				processor:    tt.fields.processor,
 				prioritizer:  tt.fields.prioritizer,
 				dataStorage:  tt.fields.dataStorage,
-				inboundPool:  tt.fields.inboundPool,
 				outboundPool: tt.fields.outboundPool,
 			}
 			if got := s.GetDataStorage(); !reflect.DeepEqual(got, tt.want) {
-				assert.Equal(t, tt.want, got)
-			}
-		})
-	}
-}
-
-func TestScheduler_GetInboundPool(t *testing.T) {
-	type fields struct {
-		config       config.Config
-		listener     listener.Listener
-		publisher    publisher.Publisher
-		processor    *processor.Processor
-		prioritizer  *prioritizer.Prioritizer
-		dataStorage  *storage.PqStorage
-		inboundPool  *goconcurrentqueue.FIFO
-		outboundPool *goconcurrentqueue.FIFO
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		want   *goconcurrentqueue.FIFO
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s := &Scheduler{
-				config:       tt.fields.config,
-				listener:     tt.fields.listener,
-				publisher:    tt.fields.publisher,
-				processor:    tt.fields.processor,
-				prioritizer:  tt.fields.prioritizer,
-				dataStorage:  tt.fields.dataStorage,
-				inboundPool:  tt.fields.inboundPool,
-				outboundPool: tt.fields.outboundPool,
-			}
-			if got := s.GetInboundPool(); !reflect.DeepEqual(got, tt.want) {
 				assert.Equal(t, tt.want, got)
 			}
 		})
@@ -493,7 +448,6 @@ func TestScheduler_GetOutboundPool(t *testing.T) {
 		processor    *processor.Processor
 		prioritizer  *prioritizer.Prioritizer
 		dataStorage  *storage.PqStorage
-		inboundPool  *goconcurrentqueue.FIFO
 		outboundPool *goconcurrentqueue.FIFO
 	}
 	tests := []struct {
@@ -512,7 +466,6 @@ func TestScheduler_GetOutboundPool(t *testing.T) {
 				processor:    tt.fields.processor,
 				prioritizer:  tt.fields.prioritizer,
 				dataStorage:  tt.fields.dataStorage,
-				inboundPool:  tt.fields.inboundPool,
 				outboundPool: tt.fields.outboundPool,
 			}
 			if got := s.GetOutboundPool(); !reflect.DeepEqual(got, tt.want) {
@@ -524,36 +477,86 @@ func TestScheduler_GetOutboundPool(t *testing.T) {
 
 func TestScheduler_GetPublisher(t *testing.T) {
 	type fields struct {
-		config       config.Config
-		listener     listener.Listener
-		publisher    publisher.Publisher
-		processor    *processor.Processor
-		prioritizer  *prioritizer.Prioritizer
-		dataStorage  *storage.PqStorage
-		inboundPool  *goconcurrentqueue.FIFO
-		outboundPool *goconcurrentqueue.FIFO
+		publisher publisher.Publisher
 	}
 	tests := []struct {
 		name   string
 		fields fields
-		want   *publisher.Publisher
+		want   publisher.Publisher
 	}{
-		// TODO: Add test cases.
+		{
+			name: "Check publisher getter",
+			fields: fields{
+				publisher: new(publishertest.Publisher),
+			},
+			want: new(publishertest.Publisher),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &Scheduler{
-				config:       tt.fields.config,
-				listener:     tt.fields.listener,
-				publisher:    tt.fields.publisher,
-				processor:    tt.fields.processor,
-				prioritizer:  tt.fields.prioritizer,
-				dataStorage:  tt.fields.dataStorage,
-				inboundPool:  tt.fields.inboundPool,
-				outboundPool: tt.fields.outboundPool,
+				publisher: tt.fields.publisher,
 			}
 			if got := s.GetPublisher(); !reflect.DeepEqual(got, tt.want) {
+				assert.Equal(t, tt.want, *got)
+			}
+		})
+	}
+}
+
+func TestScheduler_GetCluster(t *testing.T) {
+	type fields struct {
+		raftCluster *raft.Raft
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   *raft.Raft
+	}{
+		{
+			name: "Check cluster getter",
+			fields: fields{
+				raftCluster: new(raft.Raft),
+			},
+			want: new(raft.Raft),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &Scheduler{
+				raftCluster: tt.fields.raftCluster,
+			}
+			if got := s.GetCluster(); !reflect.DeepEqual(got, tt.want) {
 				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
+
+func TestScheduler_GetListener(t *testing.T) {
+	type fields struct {
+		listener listener.Listener
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   listener.Listener
+	}{
+		{
+			name: "Check listener getter",
+			fields: fields{
+				listener: new(listenertest.Listener),
+			},
+			want: new(listenertest.Listener),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &Scheduler{
+				listener: tt.fields.listener,
+			}
+			if got := s.GetListener(); !reflect.DeepEqual(got, tt.want) {
+				assert.Equal(t, tt.want, *got)
 			}
 		})
 	}
@@ -584,7 +587,6 @@ func TestScheduler_Run(t *testing.T) {
 	type fields struct {
 		config       config.Config
 		dataStorage  *storage.PqStorage
-		inboundPool  *goconcurrentqueue.FIFO
 		outboundPool *goconcurrentqueue.FIFO
 	}
 
@@ -608,8 +610,12 @@ func TestScheduler_Run(t *testing.T) {
 					PublisherDriver:          "pubsub",
 					PubsubPublisherProjectID: "testProjectId",
 					PubsubPublisherKeyFile:   dir + "/tests/pubsub_cred_mock.json",
+					StoragePath:              getProjectPath() + "/tests/tempStorageSt1",
+					ClusterNodePort:          "5558",
+					ClusterNodeHost:          "localhost",
+					ClusterInitialLeader:     "localhost:5558",
+					ClusterInitialNodes:      "localhost:5558",
 				},
-				inboundPool:  goconcurrentqueue.NewFIFO(),
 				outboundPool: goconcurrentqueue.NewFIFO(),
 				dataStorage:  storage.NewPqStorage(),
 			},
@@ -643,8 +649,12 @@ func TestScheduler_Run(t *testing.T) {
 					PublisherDriver:          "pubsub",
 					PubsubPublisherProjectID: "testProjectId",
 					PubsubPublisherKeyFile:   dir + "/tests/pubsub_cred_mock.json",
+					StoragePath:              getProjectPath() + "/tests/tempStorageSt2",
+					ClusterNodePort:          "5559",
+					ClusterNodeHost:          "localhost",
+					ClusterInitialLeader:     "localhost:5559",
+					ClusterInitialNodes:      "localhost:5559",
 				},
-				inboundPool:  goconcurrentqueue.NewFIFO(),
 				outboundPool: goconcurrentqueue.NewFIFO(),
 				dataStorage:  storage.NewPqStorage(),
 			},
@@ -673,7 +683,6 @@ func TestScheduler_Run(t *testing.T) {
 
 			s := &Scheduler{
 				config:       tt.fields.config,
-				inboundPool:  tt.fields.inboundPool,
 				outboundPool: tt.fields.outboundPool,
 				dataStorage:  tt.fields.dataStorage,
 			}
@@ -691,8 +700,16 @@ func TestScheduler_Run(t *testing.T) {
 
 			// mock individual context for each test
 			ctx := context.Background()
-			ctx, cancel := context.WithTimeout(ctx, time.Second*4)
+			ctx, cancel := context.WithTimeout(ctx, time.Second*10)
 			defer cancel()
+
+			_ = os.RemoveAll(tt.fields.config.StoragePath)
+			s.BootCluster(ctx)
+			defer func() {
+				_ = s.raftCluster.Shutdown()
+			}()
+
+			s.BootPrioritizer(ctx)
 
 			tt.fields.config.PubsubListenerSubscriptionID = "mocklistener" + strconv.Itoa(testID)
 			tt.fields.config.PubsubPublisherTopicID = "mockpublisher" + strconv.Itoa(testID)
@@ -704,7 +721,7 @@ func TestScheduler_Run(t *testing.T) {
 			}()
 			sourcePubsubClient, topic := mockPubsubListenerClient(ctx, t, sourcePubsubServerConn, tt.fields.config)
 			pubsubListener := &listenerpubsub.Listener{}
-			_ = pubsubListener.Boot(ctx, tt.fields.config, s.inboundPool)
+			_ = pubsubListener.Boot(ctx, tt.fields.config, s.prioritizer)
 			pubsubListener.SetPubsubClient(sourcePubsubClient)
 
 			// make pubsub publisher client-server connection
@@ -724,9 +741,11 @@ func TestScheduler_Run(t *testing.T) {
 
 			s.publisher = pubsubPublisher
 			s.listener = pubsubListener
-			s.BootPrioritizer(ctx)
 			s.BootProcessor(ctx)
 			s.processor.SetTime(tt.time)
+
+			// wait for election
+			time.Sleep(time.Second * 4)
 
 			// execute application
 			err := s.Run(ctx)
@@ -754,6 +773,75 @@ func TestScheduler_Run(t *testing.T) {
 				assert.Error(t, err)
 			}
 
+		})
+	}
+}
+
+func TestScheduler_ClusterLeaderChangeCallback(t *testing.T) {
+	type fields struct {
+		config          config.Config
+		listener        listener.Listener
+		publisher       publisher.Publisher
+		processor       *processor.Processor
+		prioritizer     *prioritizer.Prioritizer
+		dataStorage     *storage.PqStorage
+		outboundPool    *goconcurrentqueue.FIFO
+		raftCluster     *raft.Raft
+		listenerRunning bool
+	}
+	type args struct {
+		isLeader bool
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+	}{
+		{
+			name: "Check listener stops on lose leadership",
+			fields: fields{
+				config: config.Config{
+					ListenerDriver:       "test",
+					PublisherDriver:      "test",
+					StoragePath:          getProjectPath() + "/tests/tempStorageLt1",
+					ClusterNodePort:      "5553",
+					ClusterNodeHost:      "localhost",
+					ClusterInitialLeader: "localhost:5553",
+					ClusterInitialNodes:  "localhost:5553",
+				},
+				outboundPool: goconcurrentqueue.NewFIFO(),
+				dataStorage:  storage.NewPqStorage(),
+			},
+			args: args{
+				isLeader: false,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &Scheduler{
+				config:       tt.fields.config,
+				outboundPool: tt.fields.outboundPool,
+				dataStorage:  tt.fields.dataStorage,
+			}
+
+			// mock individual context for each test
+			ctx := context.Background()
+			ctx, cancel := context.WithTimeout(ctx, time.Second*6)
+			defer cancel()
+
+			_ = os.RemoveAll(tt.fields.config.StoragePath)
+			s.BootListener(ctx)
+			s.BootCluster(ctx)
+			defer func() {
+				_ = s.raftCluster.Shutdown()
+			}()
+
+			time.Sleep(time.Second * 2)
+			assert.Equal(t, true, s.listenerRunning)
+			s.ClusterLeaderChangeCallback(ctx, tt.args.isLeader)
+			time.Sleep(time.Second * 2)
+			assert.Equal(t, false, s.listenerRunning)
 		})
 	}
 }

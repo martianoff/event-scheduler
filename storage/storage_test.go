@@ -1,6 +1,8 @@
 package storage
 
 import (
+	"github.com/maksimru/event-scheduler/message"
+	"github.com/maksimru/go-hpds/doublylinkedlist"
 	"github.com/maksimru/go-hpds/priorityqueue"
 	"github.com/stretchr/testify/assert"
 	"reflect"
@@ -18,9 +20,10 @@ func TestNewPqStorage(t *testing.T) {
 			want: &PqStorage{
 				mutex: &sync.Mutex{},
 				dataStorage: priorityqueue.NewPriorityQueue(
-					priorityqueue.NewStringPrioritizedValueList(make([]priorityqueue.StringPrioritizedValue, 0)),
-					NewStringMinPriorityComparator(),
+					NewPrioritizedNodePointerValueList(make([]PrioritizedNodePointer, 0)),
+					NewPrioritizedNodePointerMinPriorityComparator(),
 				),
+				iterator: doublylinkedlist.NewDoublyLinkedList(),
 			},
 		},
 	}
@@ -33,10 +36,10 @@ func TestNewPqStorage(t *testing.T) {
 	}
 }
 
-func TestNewStringMinPriorityComparator(t *testing.T) {
+func TestNewPrioritizedNodePointerMinPriorityComparator(t *testing.T) {
 	tests := []struct {
 		name string
-		want *StringMinPriorityComparator
+		want *PrioritizedNodePointerMinPriorityComparator
 	}{
 		{
 			name: "String min priority comparator creation",
@@ -45,7 +48,7 @@ func TestNewStringMinPriorityComparator(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.NotPanics(t, func() {
-				NewStringMinPriorityComparator()
+				NewPrioritizedNodePointerMinPriorityComparator()
 			})
 		})
 	}
@@ -60,9 +63,9 @@ func TestPqStorage_CheckScheduled(t *testing.T) {
 		nowTimestamp int
 	}
 	storage := NewPqStorage()
-	storage.dataStorage.Enqueue(priorityqueue.NewStringPrioritizedValue("msg1", 1000))
-	storage.dataStorage.Enqueue(priorityqueue.NewStringPrioritizedValue("msg2", 1001))
-	storage.dataStorage.Enqueue(priorityqueue.NewStringPrioritizedValue("msg3", 1002))
+	storage.Enqueue(message.NewMessage("msg1", 1000))
+	storage.Enqueue(message.NewMessage("msg2", 1001))
+	storage.Enqueue(message.NewMessage("msg3", 1002))
 	emptyStorage := NewPqStorage()
 	tests := []struct {
 		name   string
@@ -134,12 +137,12 @@ func TestPqStorage_Dequeue(t *testing.T) {
 		dataStorage *priorityqueue.PriorityQueue
 	}
 	storage := NewPqStorage()
-	storage.dataStorage.Enqueue(priorityqueue.NewStringPrioritizedValue("msg1", 1000))
-	storage.dataStorage.Enqueue(priorityqueue.NewStringPrioritizedValue("msg2", 1100))
+	storage.Enqueue(message.NewMessage("msg1", 1000))
+	storage.Enqueue(message.NewMessage("msg2", 1100))
 	tests := []struct {
 		name   string
 		fields fields
-		want   priorityqueue.StringPrioritizedValue
+		want   message.Message
 	}{
 		{
 			name: "Check storage extraction",
@@ -147,7 +150,7 @@ func TestPqStorage_Dequeue(t *testing.T) {
 				mutex:       storage.mutex,
 				dataStorage: storage.dataStorage,
 			},
-			want: priorityqueue.NewStringPrioritizedValue("msg1", 1000),
+			want: message.NewMessage("msg1", 1000),
 		},
 	}
 	for _, tt := range tests {
@@ -167,9 +170,10 @@ func TestPqStorage_Enqueue(t *testing.T) {
 	type fields struct {
 		mutex       *sync.Mutex
 		dataStorage *priorityqueue.PriorityQueue
+		iterator    *doublylinkedlist.DoublyLinkedList
 	}
 	type args struct {
-		value priorityqueue.PrioritizedValue
+		value message.Message
 	}
 	storage := NewPqStorage()
 	tests := []struct {
@@ -182,9 +186,10 @@ func TestPqStorage_Enqueue(t *testing.T) {
 			fields: fields{
 				mutex:       storage.mutex,
 				dataStorage: storage.dataStorage,
+				iterator:    doublylinkedlist.NewDoublyLinkedList(),
 			},
 			args: args{
-				priorityqueue.NewStringPrioritizedValue("msg1", 1000),
+				message.NewMessage("msg1", 1000),
 			},
 		},
 	}
@@ -193,6 +198,7 @@ func TestPqStorage_Enqueue(t *testing.T) {
 			p := &PqStorage{
 				mutex:       tt.fields.mutex,
 				dataStorage: tt.fields.dataStorage,
+				iterator:    tt.fields.iterator,
 			}
 			assert.NotPanics(t, func() {
 				p.Enqueue(tt.args.value)
@@ -201,10 +207,10 @@ func TestPqStorage_Enqueue(t *testing.T) {
 	}
 }
 
-func TestStringMinPriorityComparator_Equal(t *testing.T) {
+func TestPrioritizedNodePointerMinPriorityComparator_Equal(t *testing.T) {
 	type args struct {
-		value1 priorityqueue.StringPrioritizedValue
-		value2 priorityqueue.StringPrioritizedValue
+		value1 PrioritizedNodePointer
+		value2 PrioritizedNodePointer
 	}
 	tests := []struct {
 		name string
@@ -214,23 +220,23 @@ func TestStringMinPriorityComparator_Equal(t *testing.T) {
 		{
 			name: "Check min timestamp prioritizer equals comparator",
 			args: args{
-				value1: priorityqueue.NewStringPrioritizedValue("msg1", 100),
-				value2: priorityqueue.NewStringPrioritizedValue("msg2", 100),
+				value1: NewPrioritizedNodePointer(nil, 100),
+				value2: NewPrioritizedNodePointer(nil, 100),
 			},
 			want: true,
 		},
 		{
 			name: "Check min timestamp prioritizer not equals comparator",
 			args: args{
-				value1: priorityqueue.NewStringPrioritizedValue("msg1", 100),
-				value2: priorityqueue.NewStringPrioritizedValue("msg2", 101),
+				value1: NewPrioritizedNodePointer(nil, 100),
+				value2: NewPrioritizedNodePointer(nil, 101),
 			},
 			want: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmp := NewStringMinPriorityComparator()
+			cmp := NewPrioritizedNodePointerMinPriorityComparator()
 			if got := cmp.Equal(tt.args.value1, tt.args.value2); got != tt.want {
 				assert.Equal(t, tt.want, got)
 			}
@@ -238,10 +244,10 @@ func TestStringMinPriorityComparator_Equal(t *testing.T) {
 	}
 }
 
-func TestStringMinPriorityComparator_Less(t *testing.T) {
+func TestPrioritizedNodePointerMinPriorityComparator_Less(t *testing.T) {
 	type args struct {
-		value1 priorityqueue.StringPrioritizedValue
-		value2 priorityqueue.StringPrioritizedValue
+		value1 PrioritizedNodePointer
+		value2 PrioritizedNodePointer
 	}
 	tests := []struct {
 		name string
@@ -251,26 +257,161 @@ func TestStringMinPriorityComparator_Less(t *testing.T) {
 		{
 			name: "Check that event with lower timestamp get higher priority",
 			args: args{
-				value1: priorityqueue.NewStringPrioritizedValue("msg1", 100),
-				value2: priorityqueue.NewStringPrioritizedValue("msg2", 102),
+				value1: NewPrioritizedNodePointer(nil, 100),
+				value2: NewPrioritizedNodePointer(nil, 102),
 			},
 			want: false,
 		},
 		{
 			name: "Check that event with higher timestamp get lower priority",
 			args: args{
-				value1: priorityqueue.NewStringPrioritizedValue("msg1", 200),
-				value2: priorityqueue.NewStringPrioritizedValue("msg2", 101),
+				value1: NewPrioritizedNodePointer(nil, 200),
+				value2: NewPrioritizedNodePointer(nil, 101),
 			},
 			want: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmp := NewStringMinPriorityComparator()
+			cmp := NewPrioritizedNodePointerMinPriorityComparator()
 			if got := cmp.Less(tt.args.value1, tt.args.value2); got != tt.want {
 				assert.Equal(t, tt.want, got)
 			}
+		})
+	}
+}
+
+func TestPqStorage_Dump(t *testing.T) {
+	type fields struct {
+		mutex       *sync.Mutex
+		dataStorage *priorityqueue.PriorityQueue
+		iterator    *doublylinkedlist.DoublyLinkedList
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		msgs    []message.Message
+		want    []message.Message
+		dequeue int
+	}{
+		{
+			name: "Check simple dump",
+			fields: fields{
+				mutex: &sync.Mutex{},
+				dataStorage: priorityqueue.NewPriorityQueue(
+					NewPrioritizedNodePointerValueList(make([]PrioritizedNodePointer, 0)),
+					NewPrioritizedNodePointerMinPriorityComparator(),
+				),
+				iterator: doublylinkedlist.NewDoublyLinkedList(),
+			},
+			msgs:    []message.Message{message.NewMessage("msg1", 2000), message.NewMessage("msg2", 1000), message.NewMessage("msg3", 2500)},
+			want:    []message.Message{message.NewMessage("msg1", 2000), message.NewMessage("msg2", 1000), message.NewMessage("msg3", 2500)},
+			dequeue: 0,
+		},
+		{
+			name: "Check dump with dequeue operation",
+			fields: fields{
+				mutex: &sync.Mutex{},
+				dataStorage: priorityqueue.NewPriorityQueue(
+					NewPrioritizedNodePointerValueList(make([]PrioritizedNodePointer, 0)),
+					NewPrioritizedNodePointerMinPriorityComparator(),
+				),
+				iterator: doublylinkedlist.NewDoublyLinkedList(),
+			},
+			msgs:    []message.Message{message.NewMessage("msg1", 2000), message.NewMessage("msg2", 1000), message.NewMessage("msg3", 2500)},
+			want:    []message.Message{message.NewMessage("msg1", 2000), message.NewMessage("msg3", 2500)},
+			dequeue: 1,
+		},
+		{
+			name: "Check dump with two dequeue operations",
+			fields: fields{
+				mutex: &sync.Mutex{},
+				dataStorage: priorityqueue.NewPriorityQueue(
+					NewPrioritizedNodePointerValueList(make([]PrioritizedNodePointer, 0)),
+					NewPrioritizedNodePointerMinPriorityComparator(),
+				),
+				iterator: doublylinkedlist.NewDoublyLinkedList(),
+			},
+			msgs:    []message.Message{message.NewMessage("msg1", 2000), message.NewMessage("msg2", 1000), message.NewMessage("msg3", 2500)},
+			want:    []message.Message{message.NewMessage("msg3", 2500)},
+			dequeue: 2,
+		},
+		{
+			name: "Check dump with empty data",
+			fields: fields{
+				mutex: &sync.Mutex{},
+				dataStorage: priorityqueue.NewPriorityQueue(
+					NewPrioritizedNodePointerValueList(make([]PrioritizedNodePointer, 0)),
+					NewPrioritizedNodePointerMinPriorityComparator(),
+				),
+				iterator: doublylinkedlist.NewDoublyLinkedList(),
+			},
+			msgs:    []message.Message{message.NewMessage("msg1", 2000), message.NewMessage("msg2", 1000), message.NewMessage("msg3", 2500)},
+			want:    []message.Message{},
+			dequeue: 3,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &PqStorage{
+				mutex:       tt.fields.mutex,
+				dataStorage: tt.fields.dataStorage,
+				iterator:    tt.fields.iterator,
+			}
+			for _, msg := range tt.msgs {
+				p.Enqueue(msg)
+			}
+			for tt.dequeue > 0 {
+				p.Dequeue()
+				tt.dequeue--
+			}
+			if got := *p.Dump(); !reflect.DeepEqual(got, tt.want) {
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
+
+func TestPqStorage_Flush(t *testing.T) {
+	type fields struct {
+		mutex       *sync.Mutex
+		dataStorage *priorityqueue.PriorityQueue
+		iterator    *doublylinkedlist.DoublyLinkedList
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		msgs   []message.Message
+		want   []message.Message
+	}{
+		{
+			name: "Check flush",
+			fields: fields{
+				mutex: &sync.Mutex{},
+				dataStorage: priorityqueue.NewPriorityQueue(
+					NewPrioritizedNodePointerValueList(make([]PrioritizedNodePointer, 0)),
+					NewPrioritizedNodePointerMinPriorityComparator(),
+				),
+				iterator: doublylinkedlist.NewDoublyLinkedList(),
+			},
+			msgs: []message.Message{message.NewMessage("msg1", 2000), message.NewMessage("msg2", 1000), message.NewMessage("msg3", 2500)},
+			want: []message.Message{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &PqStorage{
+				mutex:       tt.fields.mutex,
+				dataStorage: tt.fields.dataStorage,
+				iterator:    tt.fields.iterator,
+			}
+			for _, msg := range tt.msgs {
+				p.Enqueue(msg)
+			}
+			p.Flush()
+			assert.Equal(t, 0, p.dataStorage.GetLength())
+			assert.Equal(t, 0, p.iterator.GetLength())
+			assert.Equal(t, tt.want, *p.Dump())
 		})
 	}
 }
