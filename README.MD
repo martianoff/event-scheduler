@@ -5,7 +5,7 @@
 
 # What is it?
 
-Event-scheduler is a high available strongly consistent (powered by raft) application designed to receive messages from the source queue and release them to the target queue at requested time, specified in message attribute
+Event-scheduler is a high available strongly consistent (powered by [raft](https://en.wikipedia.org/wiki/Raft_(algorithm))) application designed to receive messages from the source queue and release them to the target queue at requested time, specified in message attribute
 
 ## Currently supported queue drivers
 
@@ -34,9 +34,10 @@ Event scheduler can be configured via env vars:
 | PUBSUB_PUBLISHER_TOPIC_ID             | string     |               | target queue pubsub topic id            |
 | PUBSUB_PUBLISHER_KEY_FILE             | string     |               | path to pubsub service account access key file for target queue            |
 | STORAGE_PATH             | string     | storage              | path for persistent data storage            |
-| CLUSTER_NODE_ID             | string     | scheduler_node              | node unique id            |
-| CLUSTER_IP             | string     | 127.0.0.1              | node ip address, should be accessible from other cluster nodes            |
-| CLUSTER_PORT             | string     | 5559              | node port for interaction with other cluster nodes           |
+| CLUSTER_NODE_HOST             | string     | localhost              | node host, should be accessible from other cluster nodes            |
+| CLUSTER_NODE_PORT             | string     | 5559              | node port for interaction with other cluster nodes           |
+| CLUSTER_INITIAL_NODES             | string     | localhost:5559              | comma separated list of cluster nodes           |
+| CLUSTER_INITIAL_LEADER             | string     | localhost:5559              | cluster leader address           |
 
 ## Execution
 

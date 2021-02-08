@@ -3,9 +3,9 @@ package pubsub
 import (
 	"cloud.google.com/go/pubsub"
 	"context"
-	"github.com/enriquebris/goconcurrentqueue"
 	"github.com/maksimru/event-scheduler/config"
 	"github.com/maksimru/event-scheduler/message"
+	"github.com/maksimru/event-scheduler/prioritizer"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/api/option"
 	"runtime"
@@ -14,17 +14,16 @@ import (
 
 type Listener struct {
 	config      config.Config
-	inboundPool *goconcurrentqueue.FIFO
 	client      *pubsub.Client
 	context     context.Context
 	stopFunc    context.CancelFunc
+	prioritizer *prioritizer.Prioritizer
 }
 
-func (l *Listener) Boot(ctx context.Context, config config.Config, inboundPool *goconcurrentqueue.FIFO) error {
-	l.context = ctx
-	l.config, l.inboundPool = config, inboundPool
+func (l *Listener) Boot(ctx context.Context, config config.Config, prioritizer *prioritizer.Prioritizer) error {
+	l.context, l.config = ctx, config
 	client, err := makePubsubClient(l.context, config)
-	l.client = client
+	l.client, l.prioritizer = client, prioritizer
 	return err
 }
 
@@ -79,9 +78,11 @@ func (l *Listener) Listen() error {
 				if err != nil {
 					log.Error("listener unable to read available_at attribute: ", err.Error())
 				} else {
-					err = l.inboundPool.Enqueue(message.NewMessage(string(msg.Data), priority))
+					err := l.prioritizer.Persist(message.NewMessage(string(msg.Data), priority))
 					if err != nil {
-						log.Error("listener inbound pool enqueue exception: ", err.Error())
+						log.Warn("listener is unable to persist received message")
+						// do not ack the message for strong consistency
+						continue
 					}
 				}
 			}

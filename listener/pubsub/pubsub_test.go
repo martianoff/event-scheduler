@@ -4,9 +4,12 @@ import (
 	"cloud.google.com/go/pubsub"
 	"cloud.google.com/go/pubsub/pstest"
 	"context"
-	"github.com/enriquebris/goconcurrentqueue"
+	"github.com/hashicorp/raft"
 	"github.com/maksimru/event-scheduler/config"
+	"github.com/maksimru/event-scheduler/fsm"
 	"github.com/maksimru/event-scheduler/message"
+	"github.com/maksimru/event-scheduler/prioritizer"
+	"github.com/maksimru/event-scheduler/storage"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
@@ -21,19 +24,18 @@ import (
 func TestListenerPubsub_Boot(t *testing.T) {
 	type fields struct {
 		config      config.Config
-		inboundPool *goconcurrentqueue.FIFO
+		prioritizer *prioritizer.Prioritizer
 	}
 	type args struct {
 		context     context.Context
 		config      config.Config
-		inboundPool *goconcurrentqueue.FIFO
+		prioritizer *prioritizer.Prioritizer
 	}
 	dir := getProjectPath()
 	cfg := config.Config{
 		PubsubListenerProjectID: "testProjectId",
 		PubsubListenerKeyFile:   dir + "/tests/pubsub_cred_mock.json",
 	}
-	inboundPool := goconcurrentqueue.NewFIFO()
 	tests := []struct {
 		name    string
 		fields  fields
@@ -44,12 +46,12 @@ func TestListenerPubsub_Boot(t *testing.T) {
 			name: "Check pubsub listener boot",
 			fields: fields{
 				config:      cfg,
-				inboundPool: inboundPool,
+				prioritizer: new(prioritizer.Prioritizer),
 			},
 			args: args{
 				context:     context.Background(),
 				config:      cfg,
-				inboundPool: inboundPool,
+				prioritizer: new(prioritizer.Prioritizer),
 			},
 			wantErr: false,
 		},
@@ -58,12 +60,12 @@ func TestListenerPubsub_Boot(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			l := &Listener{
 				config:      tt.fields.config,
-				inboundPool: tt.fields.inboundPool,
+				prioritizer: tt.fields.prioritizer,
 			}
 			if !tt.wantErr {
-				assert.NoError(t, l.Boot(tt.args.context, tt.args.config, tt.args.inboundPool))
+				assert.NoError(t, l.Boot(tt.args.context, tt.args.config, tt.args.prioritizer))
 			} else {
-				assert.Error(t, l.Boot(tt.args.context, tt.args.config, tt.args.inboundPool))
+				assert.Error(t, l.Boot(tt.args.context, tt.args.config, tt.args.prioritizer))
 			}
 		})
 	}
@@ -125,9 +127,25 @@ func mockPubsubClient(ctx context.Context, t *testing.T, pubsubServerConn *grpc.
 	return pubsubClient, topic
 }
 
+func bootStagingCluster(nodeId string, pqStorage *storage.PqStorage) (*raft.Raft, raft.ServerAddress) {
+	store := raft.NewInmemStore()
+	cacheStore, _ := raft.NewLogCache(128, store)
+	snapshotStore := raft.NewInmemSnapshotStore()
+	raftTransportTcpAddr := raft.NewInmemAddr()
+	_, transport := raft.NewInmemTransport(raftTransportTcpAddr)
+	raftconfig := raft.DefaultConfig()
+	raftconfig.LogLevel = "info"
+	raftconfig.LocalID = raft.ServerID(nodeId)
+	raftconfig.SnapshotThreshold = 512
+	raftServer, err := raft.NewRaft(raftconfig, fsm.NewPrioritizedFSM(pqStorage), cacheStore, store, snapshotStore, transport)
+	if err != nil {
+		panic("exception during staging cluster boot: " + err.Error())
+	}
+	return raftServer, raftTransportTcpAddr
+}
+
 func TestListenerPubsub_Listen(t *testing.T) {
 	type fields struct {
-		inboundPool *goconcurrentqueue.FIFO
 	}
 	pubsubServer := pstest.NewServer()
 	defer func() {
@@ -142,10 +160,8 @@ func TestListenerPubsub_Listen(t *testing.T) {
 		want    []message.Message
 	}{
 		{
-			name: "Check pubsub listener can receive single message with available_at attribute",
-			fields: fields{
-				inboundPool: goconcurrentqueue.NewFIFO(),
-			},
+			name:   "Check pubsub listener can receive single message with available_at attribute",
+			fields: fields{},
 			publish: []*pubsub.Message{{
 				Data:       []byte("foo"),
 				Attributes: map[string]string{"available_at": "1000"},
@@ -154,10 +170,8 @@ func TestListenerPubsub_Listen(t *testing.T) {
 			want:    []message.Message{message.NewMessage("foo", 1000)},
 		},
 		{
-			name: "Check pubsub listener can receive single message without available_at attribute",
-			fields: fields{
-				inboundPool: goconcurrentqueue.NewFIFO(),
-			},
+			name:   "Check pubsub listener can receive single message without available_at attribute",
+			fields: fields{},
 			publish: []*pubsub.Message{{
 				Data:       []byte("foo"),
 				Attributes: map[string]string{},
@@ -166,10 +180,8 @@ func TestListenerPubsub_Listen(t *testing.T) {
 			want:    []message.Message{},
 		},
 		{
-			name: "Check pubsub listener can receive single message with wrong available_at attribute",
-			fields: fields{
-				inboundPool: goconcurrentqueue.NewFIFO(),
-			},
+			name:   "Check pubsub listener can receive single message with wrong available_at attribute",
+			fields: fields{},
 			publish: []*pubsub.Message{{
 				Data:       []byte("foo"),
 				Attributes: map[string]string{"available_at": "foo"},
@@ -178,10 +190,8 @@ func TestListenerPubsub_Listen(t *testing.T) {
 			want:    []message.Message{},
 		},
 		{
-			name: "Check pubsub listener can receive multiple messages",
-			fields: fields{
-				inboundPool: goconcurrentqueue.NewFIFO(),
-			},
+			name:   "Check pubsub listener can receive multiple messages",
+			fields: fields{},
 			publish: []*pubsub.Message{{
 				Data:       []byte("msg1"),
 				Attributes: map[string]string{"available_at": "1000"},
@@ -204,8 +214,30 @@ func TestListenerPubsub_Listen(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// mock individual context for each test
 			ctx := context.Background()
-			ctx, cancel := context.WithTimeout(ctx, time.Second*1)
+			ctx, cancel := context.WithTimeout(ctx, time.Second*5)
 			defer cancel()
+
+			pqStorage := storage.NewPqStorage()
+			nodeId := string(rune(testID))
+			cluster, clusterAddr := bootStagingCluster(nodeId, pqStorage)
+			defer func() {
+				_ = cluster.Shutdown()
+			}()
+
+			p := new(prioritizer.Prioritizer)
+			_ = p.Boot(cluster)
+
+			// boot required cluster
+			cluster.BootstrapCluster(raft.Configuration{Servers: []raft.Server{
+				{
+					Suffrage: raft.Voter,
+					ID:       raft.ServerID(nodeId),
+					Address:  clusterAddr,
+				},
+			}})
+
+			// wait for election
+			time.Sleep(time.Second * 3)
 
 			cfg := config.Config{
 				PubsubListenerSubscriptionID: "mocksubscription" + strconv.Itoa(testID),
@@ -220,9 +252,9 @@ func TestListenerPubsub_Listen(t *testing.T) {
 
 			l := &Listener{
 				config:      cfg,
-				inboundPool: tt.fields.inboundPool,
 				client:      pubsubClient,
 				context:     ctx,
+				prioritizer: p,
 			}
 
 			// publish test messages
@@ -237,9 +269,9 @@ func TestListenerPubsub_Listen(t *testing.T) {
 
 			// read received messages
 			var got []message.Message
-			for l.inboundPool.GetLen() > 0 {
-				item, _ := l.inboundPool.Dequeue()
-				got = append(got, item.(message.Message))
+			for !pqStorage.IsEmpty() {
+				item := pqStorage.Dequeue()
+				got = append(got, item)
 			}
 			// compare received messages
 			if !reflect.DeepEqual(got, tt.want) {

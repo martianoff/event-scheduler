@@ -2,8 +2,8 @@ package test
 
 import (
 	"context"
-	"github.com/enriquebris/goconcurrentqueue"
 	"github.com/maksimru/event-scheduler/config"
+	"github.com/maksimru/event-scheduler/prioritizer"
 	log "github.com/sirupsen/logrus"
 	"time"
 )
@@ -13,7 +13,7 @@ type Listener struct {
 	stopFunc context.CancelFunc
 }
 
-func (l *Listener) Boot(ctx context.Context, config config.Config, inboundPool *goconcurrentqueue.FIFO) error {
+func (l *Listener) Boot(ctx context.Context, config config.Config, prioritizer *prioritizer.Prioritizer) error {
 	l.context = ctx
 	return nil
 }

@@ -193,7 +193,7 @@ func TestProcessor_Process(t *testing.T) {
 			wantErr:       false,
 		},
 	}
-	for testId, tt := range tests {
+	for testID, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 			ctx, cancel := context.WithTimeout(ctx, time.Second*4)
@@ -203,7 +203,7 @@ func TestProcessor_Process(t *testing.T) {
 			publisherInstance := new(pubsub.Publisher)
 			_ = publisherInstance.Boot(ctx, config.Config{}, outboundQueue)
 
-			nodeId := string(rune(testId))
+			nodeId := string(rune(testID))
 			cluster, clusterAddr := bootStagingCluster(nodeId, tt.fields.dataStorage)
 			defer func() {
 				_ = cluster.Shutdown()

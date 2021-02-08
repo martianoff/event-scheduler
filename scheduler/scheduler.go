@@ -52,7 +52,6 @@ type Scheduler struct {
 	processor       *processor.Processor
 	prioritizer     *prioritizer.Prioritizer
 	dataStorage     *storage.PqStorage
-	inboundPool     *goconcurrentqueue.FIFO
 	outboundPool    *goconcurrentqueue.FIFO
 	raftCluster     *raft.Raft
 	listenerRunning bool
@@ -61,30 +60,19 @@ type Scheduler struct {
 func NewScheduler(ctx context.Context, config config.Config) *Scheduler {
 	scheduler := new(Scheduler)
 	scheduler.config = config
-	scheduler.inboundPool = goconcurrentqueue.NewFIFO()
 	scheduler.outboundPool = goconcurrentqueue.NewFIFO()
 	scheduler.dataStorage = storage.NewPqStorage()
-	scheduler.BootListener(ctx)
 	scheduler.BootCluster(ctx)
-	scheduler.BootPublisher(ctx)
 	scheduler.BootPrioritizer(ctx)
+	scheduler.BootListener(ctx)
+	scheduler.BootPublisher(ctx)
 	scheduler.BootProcessor(ctx)
 	scheduler.listenerRunning = false
 	return scheduler
 }
 
 func (s *Scheduler) Run(ctx context.Context) error {
-
 	g, ctx := errgroup.WithContext(ctx)
-
-	// prioritizer receives scheduled jobs from the inboundPool and moves them into data storage
-	g.Go(func() error {
-		err := s.prioritizer.Process()
-		if err != nil {
-			log.Error("prioritizer failure: ", err.Error())
-		}
-		return err
-	})
 
 	// processor checks data storage for scheduled jobs if they are ready to dispatch and move them to the outboundPool
 	g.Go(func() error {
@@ -104,7 +92,7 @@ func (s *Scheduler) Run(ctx context.Context) error {
 		return err
 	})
 
-	// stop cluster on context
+	// stop cluster on context termination
 	g.Go(func() error {
 		for {
 			select {
@@ -153,8 +141,6 @@ func (s *Scheduler) BootCluster(ctx context.Context) {
 	}
 	s.raftCluster = raftServer
 	log.Info("cluster boot is finished: ", raftconfig.LocalID)
-
-	// Init watcher
 	s.WatchCluster(ctx)
 
 	// Init initial state
@@ -183,11 +169,10 @@ func getMD5Hash(text string) string {
 func (s *Scheduler) WatchCluster(ctx context.Context) {
 	// Watch for cluster leader changes
 	go func(ctx context.Context, cluster *Scheduler) {
-	watcherloop:
 		for {
 			select {
 			case <-ctx.Done():
-				break watcherloop
+				return
 			case v := <-s.raftCluster.LeaderCh():
 				s.ClusterLeaderChangeCallback(ctx, v)
 			}
@@ -196,22 +181,26 @@ func (s *Scheduler) WatchCluster(ctx context.Context) {
 }
 
 func (s *Scheduler) ClusterLeaderChangeCallback(ctx context.Context, isLeader bool) {
-	if !isLeader && s.listenerRunning {
-		log.Info("listener stopping")
-		err := s.listener.Stop()
-		if err != nil {
-			log.Error("listener stop failure: ", err.Error())
-		}
-	} else if isLeader && !s.listenerRunning {
-		func(s *Scheduler) {
-			s.listenerRunning = true
-			log.Info("listener starting")
-			err := s.listener.Listen()
-			s.listenerRunning = false
+	// run watcher when listener is booted only
+	if s.listener != nil {
+		if !isLeader && s.listenerRunning {
+			log.Info("listener stopping")
+			err := s.listener.Stop()
 			if err != nil {
-				log.Error("listener failure: ", err.Error())
+				log.Error("listener stop failure: ", err.Error())
 			}
-		}(s)
+		} else if isLeader && !s.listenerRunning {
+			func(s *Scheduler) {
+				s.listenerRunning = true
+				log.Info("listener starting")
+				// listener reads messages from inbound queue and persists them in storage
+				err := s.listener.Listen()
+				s.listenerRunning = false
+				if err != nil {
+					log.Error("listener failure: ", err.Error())
+				}
+			}(s)
+		}
 	}
 }
 
@@ -227,7 +216,7 @@ func (s *Scheduler) BootProcessor(ctx context.Context) {
 
 func (s *Scheduler) BootPrioritizer(ctx context.Context) {
 	prioritizerInstance := new(prioritizer.Prioritizer)
-	err := (*prioritizerInstance).Boot(ctx, s.GetInboundPool(), s.GetDataStorage())
+	err := (*prioritizerInstance).Boot(s.GetCluster())
 	if err != nil {
 		panic("exception during prioritizer boot: " + err.Error())
 	}
@@ -239,14 +228,14 @@ func (s *Scheduler) BootListener(ctx context.Context) {
 	switch s.config.ListenerDriver {
 	case "pubsub":
 		listenerInstance := new(listenerpubsub.Listener)
-		err := listenerInstance.Boot(ctx, s.GetConfig(), s.GetInboundPool())
+		err := listenerInstance.Boot(ctx, s.GetConfig(), s.prioritizer)
 		if err != nil {
 			panic("exception during listener boot: " + err.Error())
 		}
 		s.listener = listenerInstance
 	case "test":
 		listenerInstance := new(listenertest.Listener)
-		err := listenerInstance.Boot(ctx, s.GetConfig(), s.GetInboundPool())
+		err := listenerInstance.Boot(ctx, s.GetConfig(), s.prioritizer)
 		if err != nil {
 			panic("exception during listener boot: " + err.Error())
 		}
@@ -291,10 +280,6 @@ func (s *Scheduler) BootPublisher(ctx context.Context) {
 
 func (s *Scheduler) GetDataStorage() *storage.PqStorage {
 	return s.dataStorage
-}
-
-func (s *Scheduler) GetInboundPool() *goconcurrentqueue.FIFO {
-	return s.inboundPool
 }
 
 func (s *Scheduler) GetOutboundPool() *goconcurrentqueue.FIFO {
