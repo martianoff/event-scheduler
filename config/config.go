@@ -11,4 +11,9 @@ type Config struct {
 	PubsubPublisherProjectID     string `env:"PUBSUB_PUBLISHER_PROJECT_ID"`
 	PubsubPublisherTopicID       string `env:"PUBSUB_PUBLISHER_TOPIC_ID"`
 	PubsubPublisherKeyFile       string `env:"PUBSUB_PUBLISHER_KEY_FILE"`
+	StoragePath                  string `env:"STORAGE_PATH" envDefault:"storage"`
+	ClusterNodeHost              string `env:"CLUSTER_NODE_HOST" envDefault:"localhost"`
+	ClusterNodePort              string `env:"CLUSTER_NODE_PORT" envDefault:"5559"`
+	ClusterInitialNodes          string `env:"CLUSTER_INITIAL_NODES" envDefault:"localhost:5559"`
+	ClusterInitialLeader         string `env:"CLUSTER_INITIAL_LEADER" envDefault:"localhost:5559"`
 }

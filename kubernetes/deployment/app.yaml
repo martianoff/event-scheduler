@@ -1,19 +1,29 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: event-scheduler-cluster
+  labels:
+    app: event-scheduler
+spec:
+  ports:
+    - port: 5559
+      name: cluster
+  clusterIP: None
+  selector:
+    app: event-scheduler
+---
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   labels:
     app: event-scheduler
   name: event-scheduler
 spec:
-  replicas: 1
+  serviceName: event-scheduler-cluster
+  replicas: 3
   selector:
     matchLabels:
       app: event-scheduler
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 100%
-      maxUnavailable: 0
   template:
     metadata:
       labels:
@@ -25,30 +35,55 @@ spec:
           imagePullPolicy: IfNotPresent
           resources: {}
           env:
-          - name: LOG_LEVEL
-            value: info
-          - name: LISTENER_DRIVER
-            value: pubsub
-          - name: PUBSUB_LISTENER_PROJECT_ID
-            value: YOUR_SOURCE_GOOGLE_PROJECT
-          - name: PUBSUB_LISTENER_SUBSCRIPTION_ID
-            value: YOUR_SOURCE_SUBSCRIPTION
-          - name: PUBSUB_LISTENER_KEY_FILE
-            value: key.json
-          - name: PUBLISHER_DRIVER
-            value: pubsub
-          - name: PUBSUB_PUBLISHER_PROJECT_ID
-            value: YOUR_TARGET_GOOGLE_PROJECT
-          - name: PUBSUB_PUBLISHER_TOPIC_ID
-            value: YOUR_TARGET_TOPIC
-          - name: PUBSUB_PUBLISHER_KEY_FILE
-            value: key.json
+            - name: LOG_LEVEL
+              value: info
+            - name: LISTENER_DRIVER
+              value: pubsub
+            - name: PUBSUB_LISTENER_PROJECT_ID
+              value: YOUR_SOURCE_GOOGLE_PROJECT
+            - name: PUBSUB_LISTENER_SUBSCRIPTION_ID
+              value: YOUR_SOURCE_SUBSCRIPTION
+            - name: PUBSUB_LISTENER_KEY_FILE
+              value: key.json
+            - name: PUBLISHER_DRIVER
+              value: pubsub
+            - name: PUBSUB_PUBLISHER_PROJECT_ID
+              value: YOUR_TARGET_GOOGLE_PROJECT
+            - name: PUBSUB_PUBLISHER_TOPIC_ID
+              value: YOUR_TARGET_TOPIC
+            - name: PUBSUB_PUBLISHER_KEY_FILE
+              value: key.json
+            - name: STORAGE_PATH
+              value: /data
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: CLUSTER_NODE_HOST
+              value: "$(NODE_NAME).event-scheduler-cluster.default.svc.cluster.local"
+            - name: CLUSTER_NODE_PORT
+              value: "5559"
+            - name: CLUSTER_INITIAL_NODES
+              value: "event-scheduler-0.event-scheduler-cluster.default.svc.cluster.local:5559,event-scheduler-1.event-scheduler-cluster.default.svc.cluster.local:5559,event-scheduler-2.event-scheduler-cluster.default.svc.cluster.local:5559"
+            - name: CLUSTER_INITIAL_LEADER
+              value: "event-scheduler-0.event-scheduler-cluster.default.svc.cluster.local:5559"
           volumeMounts:
-          - name: keyfile
-            subPath: key.json
-            mountPath: /key.json
-            readOnly: true
+            - name: keyfile
+              subPath: key.json
+              mountPath: /key.json
+              readOnly: true
+            - name: storage
+              mountPath: /data
       volumes:
-      - name: keyfile
-        secret:
-          secretName: pubsubserviceaccount
+        - name: keyfile
+          secret:
+            secretName: pubsubserviceaccount
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        storageClassName: "default"
+        resources:
+          requests:
+            storage: 2Gi
