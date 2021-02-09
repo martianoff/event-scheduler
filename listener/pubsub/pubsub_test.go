@@ -11,6 +11,7 @@ import (
 	"github.com/maksimru/event-scheduler/prioritizer"
 	"github.com/maksimru/event-scheduler/storage"
 	"github.com/stretchr/testify/assert"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"path"
@@ -153,11 +154,12 @@ func TestListenerPubsub_Listen(t *testing.T) {
 	}()
 
 	tests := []struct {
-		name    string
-		fields  fields
-		wantErr bool
-		publish []*pubsub.Message
-		want    []message.Message
+		name         string
+		fields       fields
+		wantErr      bool
+		publish      []*pubsub.Message
+		publishDelay []*pubsub.Message
+		want         []message.Message
 	}{
 		{
 			name:   "Check pubsub listener can receive single message with available_at attribute",
@@ -166,8 +168,9 @@ func TestListenerPubsub_Listen(t *testing.T) {
 				Data:       []byte("foo"),
 				Attributes: map[string]string{"available_at": "1000"},
 			}},
-			wantErr: false,
-			want:    []message.Message{message.NewMessage("foo", 1000)},
+			publishDelay: nil,
+			wantErr:      false,
+			want:         []message.Message{message.NewMessage("foo", 1000)},
 		},
 		{
 			name:   "Check pubsub listener can receive single message without available_at attribute",
@@ -176,8 +179,9 @@ func TestListenerPubsub_Listen(t *testing.T) {
 				Data:       []byte("foo"),
 				Attributes: map[string]string{},
 			}},
-			wantErr: false,
-			want:    []message.Message{},
+			publishDelay: nil,
+			wantErr:      false,
+			want:         []message.Message{},
 		},
 		{
 			name:   "Check pubsub listener can receive single message with wrong available_at attribute",
@@ -186,8 +190,9 @@ func TestListenerPubsub_Listen(t *testing.T) {
 				Data:       []byte("foo"),
 				Attributes: map[string]string{"available_at": "foo"},
 			}},
-			wantErr: false,
-			want:    []message.Message{},
+			publishDelay: nil,
+			wantErr:      false,
+			want:         []message.Message{},
 		},
 		{
 			name:   "Check pubsub listener can receive multiple messages",
@@ -202,11 +207,45 @@ func TestListenerPubsub_Listen(t *testing.T) {
 				Data:       []byte("msg3"),
 				Attributes: map[string]string{"available_at": "1200"},
 			}},
+			publishDelay: nil,
+			wantErr:      false,
+			want: []message.Message{
+				message.NewMessage("msg1", 1000),
+				message.NewMessage("msg2", 1100),
+				message.NewMessage("msg3", 1200),
+			},
+		},
+		{
+			name:   "Check pubsub listener can receive multiple messages with publish delay",
+			fields: fields{},
+			publish: []*pubsub.Message{{
+				Data:       []byte("msg1"),
+				Attributes: map[string]string{"available_at": "1000"},
+			}, {
+				Data:       []byte("msg2"),
+				Attributes: map[string]string{"available_at": "1100"},
+			}, {
+				Data:       []byte("msg3"),
+				Attributes: map[string]string{"available_at": "1200"},
+			}},
+			publishDelay: []*pubsub.Message{{
+				Data:       []byte("msg6"),
+				Attributes: map[string]string{"available_at": "1500"},
+			}, {
+				Data:       []byte("msg5"),
+				Attributes: map[string]string{"available_at": "1400"},
+			}, {
+				Data:       []byte("msg4"),
+				Attributes: map[string]string{"available_at": "1300"},
+			}},
 			wantErr: false,
 			want: []message.Message{
 				message.NewMessage("msg1", 1000),
 				message.NewMessage("msg2", 1100),
 				message.NewMessage("msg3", 1200),
+				message.NewMessage("msg4", 1300),
+				message.NewMessage("msg5", 1400),
+				message.NewMessage("msg6", 1500),
 			},
 		},
 	}
@@ -214,7 +253,7 @@ func TestListenerPubsub_Listen(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// mock individual context for each test
 			ctx := context.Background()
-			ctx, cancel := context.WithTimeout(ctx, time.Second*5)
+			ctx, cancel := context.WithTimeout(ctx, time.Second*6)
 			defer cancel()
 
 			pqStorage := storage.NewPqStorage()
@@ -228,7 +267,7 @@ func TestListenerPubsub_Listen(t *testing.T) {
 			_ = p.Boot(cluster)
 
 			// boot required cluster
-			cluster.BootstrapCluster(raft.Configuration{Servers: []raft.Server{
+			f := cluster.BootstrapCluster(raft.Configuration{Servers: []raft.Server{
 				{
 					Suffrage: raft.Voter,
 					ID:       raft.ServerID(nodeId),
@@ -236,8 +275,10 @@ func TestListenerPubsub_Listen(t *testing.T) {
 				},
 			}})
 
-			// wait for election
-			time.Sleep(time.Second * 3)
+			err := f.Error()
+			if err != nil {
+				t.Fatal("Cluster bootstrap failed: ", err)
+			}
 
 			cfg := config.Config{
 				PubsubListenerSubscriptionID: "mocksubscription" + strconv.Itoa(testID),
@@ -261,11 +302,31 @@ func TestListenerPubsub_Listen(t *testing.T) {
 			for _, msg := range tt.publish {
 				pubsubServer.Publish(topic.String(), msg.Data, msg.Attributes)
 			}
-			if !tt.wantErr {
-				assert.NoError(t, l.Listen())
-			} else {
-				assert.Error(t, l.Listen())
+
+			g, ctx := errgroup.WithContext(ctx)
+
+			// run listener in background
+			g.Go(func() error {
+				if !tt.wantErr {
+					assert.NoError(t, l.Listen())
+				} else {
+					assert.Error(t, l.Listen())
+				}
+				return nil
+			})
+
+			// simulate second batch
+			if tt.publishDelay != nil {
+				g.Go(func() error {
+					time.Sleep(time.Second * 2)
+					// publish second batch of messages
+					for _, msg := range tt.publishDelay {
+						pubsubServer.Publish(topic.String(), msg.Data, msg.Attributes)
+					}
+					return nil
+				})
 			}
+			g.Wait()
 
 			// read received messages
 			var got []message.Message

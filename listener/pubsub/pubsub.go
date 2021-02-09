@@ -71,22 +71,28 @@ func (l *Listener) Listen() error {
 
 	// Handle individual messages in a goroutine.
 	go func() {
-		for msg := range cm {
-			log.Trace("listener message received: ", string(msg.Data))
-			if availableAt, has := msg.Attributes["available_at"]; has {
-				priority, err := strconv.Atoi(availableAt)
-				if err != nil {
-					log.Error("listener unable to read available_at attribute: ", err.Error())
-				} else {
-					err := l.prioritizer.Persist(message.NewMessage(string(msg.Data), priority))
+		for {
+			select {
+			case <-pubsubContext.Done():
+				return
+			case msg := <-cm:
+				log.Trace("listener message received: ", string(msg.Data))
+				if availableAt, has := msg.Attributes["available_at"]; has {
+					priority, err := strconv.Atoi(availableAt)
 					if err != nil {
-						log.Warn("listener is unable to persist received message")
-						// do not ack the message for strong consistency
-						continue
+						log.Error("listener unable to read available_at attribute: ", err.Error())
+					} else {
+						err := l.prioritizer.Persist(message.NewMessage(string(msg.Data), priority))
+						if err != nil {
+							log.Warn("listener is unable to persist received message")
+							// do not ack the message for strong consistency
+							msg.Nack()
+							break
+						}
 					}
 				}
+				msg.Ack()
 			}
-			msg.Ack()
 		}
 	}()
 
