@@ -136,7 +136,7 @@ func (p *PqStorage) Flush() {
 	p.mutex.Unlock()
 }
 
-func (p *PqStorage) Dump() *[]message.Message {
+func (p *PqStorage) Dump() []message.Message {
 	p.mutex.Lock()
 	clone := make([]message.Message, p.dataStorage.GetLength())
 	node := p.iterator.GetHead()
@@ -147,5 +147,5 @@ func (p *PqStorage) Dump() *[]message.Message {
 		i++
 	}
 	p.mutex.Unlock()
-	return &clone
+	return clone
 }
