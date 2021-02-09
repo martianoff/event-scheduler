@@ -1,6 +1,7 @@
 package fsm
 
 import (
+	"bytes"
 	"encoding/json"
 	"github.com/hashicorp/raft"
 	"github.com/maksimru/event-scheduler/message"
@@ -32,7 +33,7 @@ type ApplyResponse struct {
 }
 
 type fsmSnapshot struct {
-	dump *[]message.Message
+	dump []message.Message
 }
 
 // Persist should dump all necessary state to the WriteCloser 'sink',
@@ -40,13 +41,17 @@ type fsmSnapshot struct {
 func (f fsmSnapshot) Persist(sink raft.SnapshotSink) error {
 	err := func() error {
 
-		b, err := json.Marshal(f.dump)
-		if err != nil {
-			return err
+		buf := new(bytes.Buffer)
+		encoder := json.NewEncoder(buf)
+		for _, msg := range f.dump {
+			err := encoder.Encode(msg)
+			if err != nil {
+				return err
+			}
 		}
 
 		// Write data to sink.
-		if _, err := sink.Write(b); err != nil {
+		if _, err := sink.Write(buf.Bytes()); err != nil {
 			return err
 		}
 
@@ -112,6 +117,9 @@ func (b prioritizedFSM) Snapshot() (raft.FSMSnapshot, error) {
 // state.
 func (b prioritizedFSM) Restore(rClose io.ReadCloser) error {
 	defer func() {
+		if rClose == nil {
+			return
+		}
 		if err := rClose.Close(); err != nil {
 			log.Errorf("Snapshot restore failed: close error %s\n", err.Error())
 		}
@@ -123,7 +131,7 @@ func (b prioritizedFSM) Restore(rClose io.ReadCloser) error {
 	b.storage.Flush()
 	decoder := json.NewDecoder(rClose)
 	for decoder.More() {
-		var data = message.Message{}
+		var data message.Message
 		err := decoder.Decode(&data)
 		if err != nil {
 			log.Errorf("Snapshot restore failed: error decode data %s\n", err.Error())
@@ -131,13 +139,6 @@ func (b prioritizedFSM) Restore(rClose io.ReadCloser) error {
 		}
 		b.storage.Enqueue(data)
 		totalRestored++
-	}
-
-	// read closing bracket
-	_, err := decoder.Token()
-	if err != nil {
-		log.Errorf("Snapshot restore failed: error %s\n", err.Error())
-		return err
 	}
 
 	log.Infof("Snapshot restore finished: success restore %d messages in snapshot\n", totalRestored)

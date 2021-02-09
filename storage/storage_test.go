@@ -365,7 +365,7 @@ func TestPqStorage_Dump(t *testing.T) {
 				p.Dequeue()
 				tt.dequeue--
 			}
-			if got := *p.Dump(); !reflect.DeepEqual(got, tt.want) {
+			if got := p.Dump(); !reflect.DeepEqual(got, tt.want) {
 				assert.Equal(t, tt.want, got)
 			}
 		})
@@ -411,7 +411,7 @@ func TestPqStorage_Flush(t *testing.T) {
 			p.Flush()
 			assert.Equal(t, 0, p.dataStorage.GetLength())
 			assert.Equal(t, 0, p.iterator.GetLength())
-			assert.Equal(t, tt.want, *p.Dump())
+			assert.Equal(t, tt.want, p.Dump())
 		})
 	}
 }
