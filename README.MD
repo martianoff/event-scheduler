@@ -63,7 +63,7 @@ kubectl apply -f ./event-scheduler/kubernetes/deployment
 ## Future / Roadmap (Unordered)
 
 - Message compression
-- Multi-channel support
+- Multi-channel support + channel API
 - ~~High availability~~
 - ~~Persistence storage~~
 - Prometheus metrics
