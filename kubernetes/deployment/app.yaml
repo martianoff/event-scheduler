@@ -65,8 +65,6 @@ spec:
               value: "5559"
             - name: CLUSTER_INITIAL_NODES
               value: "event-scheduler-0.event-scheduler-cluster.default.svc.cluster.local:5559,event-scheduler-1.event-scheduler-cluster.default.svc.cluster.local:5559,event-scheduler-2.event-scheduler-cluster.default.svc.cluster.local:5559"
-            - name: CLUSTER_INITIAL_LEADER
-              value: "event-scheduler-0.event-scheduler-cluster.default.svc.cluster.local:5559"
           volumeMounts:
             - name: keyfile
               subPath: key.json

@@ -147,14 +147,8 @@ func (s *Scheduler) BootCluster(ctx context.Context) {
 	initialClusterNodes := strings.Split(s.config.ClusterInitialNodes, ",")
 	initialClusterServers := make([]raft.Server, len(initialClusterNodes))
 	for k, nodeHost := range initialClusterNodes {
-		// set other nodes to pending status
-		suffrage := raft.Staging
-		// set initial leader
-		if nodeHost == s.config.ClusterInitialLeader {
-			suffrage = raft.Voter
-		}
 		initialClusterServers[k] = raft.Server{
-			Suffrage: suffrage,
+			Suffrage: raft.Voter,
 			ID:       raft.ServerID(getMD5Hash(nodeHost)),
 			Address:  raft.ServerAddress(nodeHost),
 		}
