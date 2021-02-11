@@ -15,5 +15,4 @@ type Config struct {
 	ClusterNodeHost              string `env:"CLUSTER_NODE_HOST" envDefault:"localhost"`
 	ClusterNodePort              string `env:"CLUSTER_NODE_PORT" envDefault:"5559"`
 	ClusterInitialNodes          string `env:"CLUSTER_INITIAL_NODES" envDefault:"localhost:5559"`
-	ClusterInitialLeader         string `env:"CLUSTER_INITIAL_LEADER" envDefault:"localhost:5559"`
 }
