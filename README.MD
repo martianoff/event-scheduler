@@ -37,11 +37,31 @@ Event scheduler can be configured via env vars:
 | CLUSTER_NODE_HOST             | string     | localhost              | node host, should be accessible from other cluster nodes            |
 | CLUSTER_NODE_PORT             | string     | 5559              | node port for interaction with other cluster nodes           |
 | CLUSTER_INITIAL_NODES             | string     | localhost:5559              | comma separated list of cluster nodes           |
+| API_PORT             | string     | 5569              | api port           |
 
 ## Execution
 
 ```bash
 go run app/main.go
+```
+
+## Cluster management API
+
+Get cluster status
+```bash
+curl -XGET "http://event-scheduler:5569/cluster" --header "Content-type: application/json"
+```
+
+
+Add node
+```bash
+curl -XPOST "http://event-scheduler:5569/cluster" --header "Content-type: application/json" -d '{"node_addr": "node4:5559"}'
+```
+
+
+Remove node
+```bash
+curl -XDELETE "http://event-scheduler:5569/cluster" --header "Content-type: application/json" -d '{"node_addr": "node4:5559"}'
 ```
 
 ## Tests
