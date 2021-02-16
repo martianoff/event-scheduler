@@ -5,6 +5,7 @@ import (
 	"github.com/hashicorp/raft"
 	"github.com/maksimru/event-scheduler/channel"
 	"github.com/maksimru/event-scheduler/message"
+	"github.com/maksimru/event-scheduler/nodenameresolver"
 	"github.com/maksimru/event-scheduler/storage"
 	"github.com/stretchr/testify/assert"
 	"io"
@@ -81,20 +82,28 @@ func Test_prioritizedFSM_Snapshot(t *testing.T) {
 	}
 }
 
-func bootStagingCluster(nodeId string, fsm *prioritizedFSM, snapshotStore *raft.InmemSnapshotStore) (*raft.Raft, raft.ServerAddress) {
+func inmemConfig() *raft.Config {
+	conf := raft.DefaultConfig()
+	conf.HeartbeatTimeout = 50 * time.Millisecond
+	conf.ElectionTimeout = 50 * time.Millisecond
+	conf.LeaderLeaseTimeout = 50 * time.Millisecond
+	conf.CommitTimeout = 5 * time.Millisecond
+	return conf
+}
+
+func bootStagingCluster(fsm *prioritizedFSM, snapshotStore *raft.InmemSnapshotStore) (*raft.Raft, *raft.InmemTransport) {
 	store := raft.NewInmemStore()
 	cacheStore, _ := raft.NewLogCache(128, store)
-	raftTransportTcpAddr := raft.NewInmemAddr()
-	_, transport := raft.NewInmemTransport(raftTransportTcpAddr)
-	raftconfig := raft.DefaultConfig()
+	_, transport := raft.NewInmemTransport("")
+	raftconfig := inmemConfig()
 	raftconfig.LogLevel = "info"
-	raftconfig.LocalID = raft.ServerID(nodeId)
+	raftconfig.LocalID = nodenameresolver.Resolve(string(transport.LocalAddr()))
 	raftconfig.SnapshotThreshold = 512
 	raftServer, err := raft.NewRaft(raftconfig, fsm, cacheStore, store, snapshotStore, transport)
 	if err != nil {
 		panic("exception during staging cluster boot: " + err.Error())
 	}
-	return raftServer, raftTransportTcpAddr
+	return raftServer, transport
 }
 
 func Test_prioritizedFSM_Restore(t *testing.T) {
@@ -165,7 +174,7 @@ func Test_prioritizedFSM_Restore(t *testing.T) {
 			wantErr: false,
 		},
 	}
-	for testID, tt := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 
 			s := tt.fields.storage
@@ -175,8 +184,7 @@ func Test_prioritizedFSM_Restore(t *testing.T) {
 				storage: s,
 			}
 
-			nodeId := string(rune(testID))
-			cluster, clusterAddr := bootStagingCluster(nodeId, f, snapshotStore)
+			cluster, clusterTransport := bootStagingCluster(f, snapshotStore)
 			defer func() {
 				_ = cluster.Shutdown()
 			}()
@@ -185,13 +193,13 @@ func Test_prioritizedFSM_Restore(t *testing.T) {
 			cluster.BootstrapCluster(raft.Configuration{Servers: []raft.Server{
 				{
 					Suffrage: raft.Voter,
-					ID:       raft.ServerID(nodeId),
-					Address:  clusterAddr,
+					ID:       nodenameresolver.Resolve(string(clusterTransport.LocalAddr())),
+					Address:  clusterTransport.LocalAddr(),
 				},
 			}})
 
 			// wait for election
-			time.Sleep(time.Second * 3)
+			time.Sleep(time.Second * 1)
 
 			gotChannels, gotMessages := f.storage.Dump()
 			if !reflect.DeepEqual(gotChannels, tt.channels) {
@@ -254,10 +262,10 @@ func Test_prioritizedFSM_Restore(t *testing.T) {
 
 			gotChannels, gotMessages = f.storage.Dump()
 			if !reflect.DeepEqual(gotChannels, tt.channels) {
-				assert.Equal(t, tt.channels, gotChannels)
+				assert.ElementsMatch(t, tt.channels, gotChannels)
 			}
 			if !reflect.DeepEqual(gotMessages, tt.messages) {
-				assert.Equal(t, tt.messages, gotMessages)
+				assert.ElementsMatch(t, tt.messages, gotMessages)
 			}
 		})
 	}
