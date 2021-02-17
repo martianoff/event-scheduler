@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"github.com/hashicorp/raft"
 	"github.com/maksimru/event-scheduler/channel"
+	pubsublistenerconfig "github.com/maksimru/event-scheduler/listener/config"
 	"github.com/maksimru/event-scheduler/message"
+	pubsubpublisherconfig "github.com/maksimru/event-scheduler/publisher/config"
 	"github.com/maksimru/event-scheduler/storage"
+	"github.com/mitchellh/mapstructure"
 	log "github.com/sirupsen/logrus"
 	"io"
 )
@@ -141,7 +144,7 @@ func (b prioritizedFSM) Apply(raftLog *raft.Log) interface{} {
 				Data: data,
 			}
 		case OperationChannelCreate:
-			c, _ := b.storage.AddChannel(payload.Channel)
+			c, _ := b.storage.AddChannel(remapChannelConfig(payload.Channel))
 			return &ApplyResponse{
 				Data: c,
 			}
@@ -151,13 +154,40 @@ func (b prioritizedFSM) Apply(raftLog *raft.Log) interface{} {
 				Data: c,
 			}
 		case OperationChannelUpdate:
-			c, _ := b.storage.UpdateChannel(payload.ChannelID, payload.Channel)
+			c, _ := b.storage.UpdateChannel(payload.ChannelID, remapChannelConfig(payload.Channel))
 			return &ApplyResponse{
 				Data: c,
 			}
 		}
 	}
 	return nil
+}
+
+// transform hash map config to real objects
+func remapChannelConfig(channel channel.Channel) channel.Channel {
+	switch channel.Source.Driver {
+	case "pubsub":
+		var cfg pubsublistenerconfig.SourceConfig
+		err := mapstructure.Decode(channel.Source.Config, &cfg)
+		if err != nil {
+			panic(err)
+		}
+		channel.Source.Config = cfg
+	default:
+		//TODO: handle unsupported drivers
+	}
+	switch channel.Destination.Driver {
+	case "pubsub":
+		var cfg pubsubpublisherconfig.DestinationConfig
+		err := mapstructure.Decode(channel.Destination.Config, &cfg)
+		if err != nil {
+			panic(err)
+		}
+		channel.Destination.Config = cfg
+	default:
+		//TODO: handle unsupported drivers
+	}
+	return channel
 }
 
 // Snapshot is used to support log compaction. This call should
