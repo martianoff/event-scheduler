@@ -12,6 +12,10 @@ import (
 	"sync"
 )
 
+var (
+	ErrChannelNotFound = errors.New("channel is not found")
+)
+
 type PrioritizedNodePointer struct {
 	value    *doublylinkedlist.Node
 	priority int
@@ -120,6 +124,18 @@ func (p *PqStorage) Dump() ([]channel.Channel, map[string][]message.Message) {
 	return channels, m
 }
 
+func (p *PqStorage) GetChannel(channelID string) (channel.Channel, error) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	c, has := p.channels[channelID]
+	if !has {
+		return channel.Channel{}, ErrChannelNotFound
+	}
+
+	return c, nil
+}
+
 func (p *PqStorage) GetChannels() []channel.Channel {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
@@ -161,7 +177,7 @@ func (p *PqStorage) UpdateChannel(channelID string, c channel.Channel) (channel.
 
 	_, has := p.channels[channelID]
 	if !has {
-		return channel.Channel{}, errors.New("channel is not found")
+		return channel.Channel{}, ErrChannelNotFound
 	}
 
 	// do not let override channel id
@@ -176,7 +192,7 @@ func (p *PqStorage) DeleteChannel(channelID string) (channel.Channel, error) {
 
 	c, has := p.channels[channelID]
 	if !has {
-		return channel.Channel{}, errors.New("channel is not found")
+		return channel.Channel{}, ErrChannelNotFound
 	}
 	delete(p.channels, channelID)
 	s, has := p.GetChannelStorage(channelID)

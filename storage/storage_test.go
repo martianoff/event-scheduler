@@ -947,6 +947,58 @@ func TestPqStorage_GetChannels(t *testing.T) {
 	}
 }
 
+func TestPqStorage_GetChannel(t *testing.T) {
+	type fields struct {
+		mutex    *sync.Mutex
+		channels map[string]channel.Channel
+		data     map[string]PqChannelStorage
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		want    channel.Channel
+		wantErr bool
+	}{
+		{
+			name: "Check get channel",
+			fields: fields{
+				mutex:    &sync.Mutex{},
+				channels: map[string]channel.Channel{"ch1": {ID: "ch1"}},
+				data:     map[string]PqChannelStorage{"ch1": NewPqChannelStorage()},
+			},
+			want:    channel.Channel{ID: "ch1"},
+			wantErr: false,
+		},
+		{
+			name: "Check get missing channel",
+			fields: fields{
+				mutex:    &sync.Mutex{},
+				channels: map[string]channel.Channel{"ch2": {ID: "ch2"}},
+				data:     map[string]PqChannelStorage{"ch2": NewPqChannelStorage()},
+			},
+			want:    channel.Channel{},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &PqStorage{
+				mutex:    tt.fields.mutex,
+				channels: tt.fields.channels,
+				data:     tt.fields.data,
+			}
+			got, err := p.GetChannel("ch1")
+			assert.Equal(t, tt.want, got)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+
+		})
+	}
+}
+
 func TestPqStorage_UpdateChannel(t *testing.T) {
 	type fields struct {
 		mutex    *sync.Mutex
