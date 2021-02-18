@@ -144,17 +144,26 @@ func (b prioritizedFSM) Apply(raftLog *raft.Log) interface{} {
 				Data: data,
 			}
 		case OperationChannelCreate:
-			c, _ := b.storage.AddChannel(remapChannelConfig(payload.Channel))
+			c, err := b.storage.AddChannel(remapChannelConfig(payload.Channel))
+			if err != nil {
+				return err
+			}
 			return &ApplyResponse{
 				Data: c,
 			}
 		case OperationChannelDelete:
-			c, _ := b.storage.DeleteChannel(payload.ChannelID)
+			c, err := b.storage.DeleteChannel(payload.ChannelID)
+			if err != nil {
+				return err
+			}
 			return &ApplyResponse{
 				Data: c,
 			}
 		case OperationChannelUpdate:
-			c, _ := b.storage.UpdateChannel(payload.ChannelID, remapChannelConfig(payload.Channel))
+			c, err := b.storage.UpdateChannel(payload.ChannelID, remapChannelConfig(payload.Channel))
+			if err != nil {
+				return err
+			}
 			return &ApplyResponse{
 				Data: c,
 			}
@@ -164,30 +173,32 @@ func (b prioritizedFSM) Apply(raftLog *raft.Log) interface{} {
 }
 
 // transform hash map config to real objects
-func remapChannelConfig(channel channel.Channel) channel.Channel {
-	switch channel.Source.Driver {
+func remapChannelConfig(c channel.Channel) channel.Channel {
+	switch c.Source.Driver {
 	case "pubsub":
 		var cfg pubsublistenerconfig.SourceConfig
-		err := mapstructure.Decode(channel.Source.Config, &cfg)
+		err := mapstructure.Decode(c.Source.Config, &cfg)
 		if err != nil {
 			panic(err)
 		}
-		channel.Source.Config = cfg
+		c.Source.Config = cfg
 	default:
-		//TODO: handle unsupported drivers
+		// truncate configs of unsupported drivers
+		c.Source.Config = nil
 	}
-	switch channel.Destination.Driver {
+	switch c.Destination.Driver {
 	case "pubsub":
 		var cfg pubsubpublisherconfig.DestinationConfig
-		err := mapstructure.Decode(channel.Destination.Config, &cfg)
+		err := mapstructure.Decode(c.Destination.Config, &cfg)
 		if err != nil {
 			panic(err)
 		}
-		channel.Destination.Config = cfg
+		c.Destination.Config = cfg
 	default:
-		//TODO: handle unsupported drivers
+		// truncate configs of unsupported drivers
+		c.Destination.Config = nil
 	}
-	return channel
+	return c
 }
 
 // Snapshot is used to support log compaction. This call should
