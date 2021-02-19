@@ -39,6 +39,7 @@ type CommandPayload struct {
 
 type ApplyResponse struct {
 	Data interface{}
+	Err  error
 }
 
 type fsmSnapshot struct {
@@ -145,27 +146,21 @@ func (b prioritizedFSM) Apply(raftLog *raft.Log) interface{} {
 			}
 		case OperationChannelCreate:
 			c, err := b.storage.AddChannel(remapChannelConfig(payload.Channel))
-			if err != nil {
-				return err
-			}
 			return &ApplyResponse{
 				Data: c,
+				Err:  err,
 			}
 		case OperationChannelDelete:
 			c, err := b.storage.DeleteChannel(payload.ChannelID)
-			if err != nil {
-				return err
-			}
 			return &ApplyResponse{
 				Data: c,
+				Err:  err,
 			}
 		case OperationChannelUpdate:
 			c, err := b.storage.UpdateChannel(payload.ChannelID, remapChannelConfig(payload.Channel))
-			if err != nil {
-				return err
-			}
 			return &ApplyResponse{
 				Data: c,
+				Err:  err,
 			}
 		}
 	}
