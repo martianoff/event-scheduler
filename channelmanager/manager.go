@@ -27,6 +27,13 @@ type SchedulerChannelManager struct {
 	storage *storage.PqStorage
 }
 
+func NewSchedulerChannelManager(cluster *raft.Raft, storage *storage.PqStorage) *SchedulerChannelManager {
+	return &SchedulerChannelManager{
+		cluster: cluster,
+		storage: storage,
+	}
+}
+
 func (m *SchedulerChannelManager) BootChannelManager(cluster *raft.Raft, storage *storage.PqStorage) error {
 	m.cluster = cluster
 	m.storage = storage
@@ -58,10 +65,9 @@ func (m *SchedulerChannelManager) AddChannel(channelInput channel.Channel) (*cha
 		log.Error("channelmanager error persisting data in raft cluster: ", err.Error())
 		return nil, err
 	}
-	r, ok := applyFuture.Response().(*fsm.ApplyResponse)
-	if !ok {
-		log.Error("channelmanager error parsing apply response")
-		return nil, errors.New("fsm response failed")
+	r, _ := applyFuture.Response().(*fsm.ApplyResponse)
+	if r.Err != nil {
+		return nil, r.Err
 	}
 	c := r.Data.(channel.Channel)
 	return &c, nil
@@ -85,10 +91,9 @@ func (m *SchedulerChannelManager) DeleteChannel(ID string) error {
 		log.Error("channelmanager error persisting data in raft cluster: ", err.Error())
 		return err
 	}
-	_, ok := applyFuture.Response().(*fsm.ApplyResponse)
-	if !ok {
-		log.Error("channelmanager error parsing apply response")
-		return errors.New("fsm response failed")
+	r, _ := applyFuture.Response().(*fsm.ApplyResponse)
+	if r.Err != nil {
+		return r.Err
 	}
 	return nil
 }
@@ -112,10 +117,9 @@ func (m *SchedulerChannelManager) UpdateChannel(ID string, channelInput channel.
 		log.Error("channelmanager error persisting data in raft cluster: ", err.Error())
 		return nil, err
 	}
-	r, ok := applyFuture.Response().(*fsm.ApplyResponse)
-	if !ok {
-		log.Error("channelmanager error parsing apply response")
-		return nil, errors.New("fsm response failed")
+	r, _ := applyFuture.Response().(*fsm.ApplyResponse)
+	if r.Err != nil {
+		return nil, r.Err
 	}
 	c := r.Data.(channel.Channel)
 	return &c, nil

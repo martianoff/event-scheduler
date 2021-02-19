@@ -1,7 +1,7 @@
 package clustermanager
 
 import (
-	"github.com/go-playground/validator"
+	"github.com/go-playground/validator/v10"
 	"github.com/hashicorp/raft"
 	"github.com/labstack/echo/v4"
 	"github.com/maksimru/event-scheduler/fsm"
