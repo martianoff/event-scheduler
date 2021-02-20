@@ -45,6 +45,10 @@ Event scheduler can be configured via env vars:
 go run app/main.go
 ```
 
+## API overview
+
+API is served on the port defined in API_PORT env var. You can use any node for API calls. Application will be able to automatically forward API requests to the leader node when needed
+
 ## Cluster management API
 
 Get cluster status
@@ -52,16 +56,36 @@ Get cluster status
 curl -XGET "http://event-scheduler:5569/cluster" --header "Content-type: application/json"
 ```
 
-
 Add node
 ```bash
 curl -XPOST "http://event-scheduler:5569/cluster" --header "Content-type: application/json" -d '{"node_addr": "node4:5559"}'
 ```
 
-
 Remove node
 ```bash
 curl -XDELETE "http://event-scheduler:5569/cluster" --header "Content-type: application/json" -d '{"node_addr": "node4:5559"}'
+```
+
+## Channel management API
+
+Get channels
+```bash
+curl -XGET "http://event-scheduler:5569/channels" --header "Content-type: application/json"
+```
+
+Add channel
+```bash
+curl -XPOST "http://event-scheduler:5569/channels" --header "Content-type: application/json" -d '{"source":{"driver":"pubsub","config":{"project_id":"test_project","subscription_id":"test_subscription","key_file":"test_key_file"}},"destination":{"driver":"pubsub","config":{"project_id":"test_project","topic_id":"test_topic","key_file":"test_key_file"}}}'
+```
+
+Update channel
+```bash
+curl -XPATCH "http://event-scheduler:5569/channels/{channel_id}" --header "Content-type: application/json" -d '{"source":{"driver":"pubsub","config":{"project_id":"test_project","subscription_id":"test_subscription","key_file":"test_key_file"}},"destination":{"driver":"pubsub","config":{"project_id":"test_project","topic_id":"test_topic","key_file":"test_key_file"}}}'
+```
+
+Remove channel
+```bash
+curl -XDELETE "http://event-scheduler:5569/channels/{channel_id}" --header "Content-type: application/json"
 ```
 
 ## Tests
