@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/hashicorp/raft"
 	"github.com/labstack/echo/v4"
+	"github.com/maksimru/event-scheduler/errormessages"
 	"github.com/maksimru/event-scheduler/nodenameresolver"
 	"net/http"
 )
@@ -40,7 +41,15 @@ type NodeInput struct {
 }
 
 func (m *RaftClusterManager) AddNode(ctx echo.Context) error {
+	if m.cluster.State() != raft.Leader {
+		return ctx.JSON(http.StatusUnprocessableEntity, map[string]interface{}{
+			"status": false,
+			"error":  fmt.Sprintf("error adding new channel %s: %s", ctx, errormessages.ErrOperationIsRestrictedOnNonLeader),
+		})
+	}
+
 	node := new(NodeInput)
+
 	if err := ctx.Bind(&node); err != nil {
 		return ctx.JSON(http.StatusUnprocessableEntity, map[string]interface{}{
 			"status": false,
@@ -65,6 +74,13 @@ func (m *RaftClusterManager) AddNode(ctx echo.Context) error {
 }
 
 func (m *RaftClusterManager) DeleteNode(ctx echo.Context) error {
+	if m.cluster.State() != raft.Leader {
+		return ctx.JSON(http.StatusUnprocessableEntity, map[string]interface{}{
+			"status": false,
+			"error":  fmt.Sprintf("error adding new channel %s: %s", ctx, errormessages.ErrOperationIsRestrictedOnNonLeader),
+		})
+	}
+
 	node := new(NodeInput)
 	if err := ctx.Bind(&node); err != nil {
 		return ctx.JSON(http.StatusUnprocessableEntity, map[string]interface{}{

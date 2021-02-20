@@ -2,17 +2,13 @@ package channelmanager
 
 import (
 	"encoding/json"
-	"errors"
 	"github.com/hashicorp/raft"
 	"github.com/maksimru/event-scheduler/channel"
+	"github.com/maksimru/event-scheduler/errormessages"
 	"github.com/maksimru/event-scheduler/fsm"
 	"github.com/maksimru/event-scheduler/storage"
 	log "github.com/sirupsen/logrus"
 	"time"
-)
-
-var (
-	ErrOperationIsRestrictedOnNonLeader = errors.New("channel operation is denied on non-leader node")
 )
 
 type ChannelManager interface {
@@ -42,14 +38,14 @@ func (m *SchedulerChannelManager) BootChannelManager(cluster *raft.Raft, storage
 
 func (m *SchedulerChannelManager) GetChannels() ([]channel.Channel, error) {
 	if m.cluster.State() != raft.Leader {
-		return nil, ErrOperationIsRestrictedOnNonLeader
+		return nil, errormessages.ErrOperationIsRestrictedOnNonLeader
 	}
 	return m.storage.GetChannels(), nil
 }
 
 func (m *SchedulerChannelManager) AddChannel(channelInput channel.Channel) (*channel.Channel, error) {
 	if m.cluster.State() != raft.Leader {
-		return nil, ErrOperationIsRestrictedOnNonLeader
+		return nil, errormessages.ErrOperationIsRestrictedOnNonLeader
 	}
 	opPayload := fsm.CommandPayload{
 		Operation: fsm.OperationChannelCreate,
@@ -75,7 +71,7 @@ func (m *SchedulerChannelManager) AddChannel(channelInput channel.Channel) (*cha
 
 func (m *SchedulerChannelManager) DeleteChannel(ID string) error {
 	if m.cluster.State() != raft.Leader {
-		return ErrOperationIsRestrictedOnNonLeader
+		return errormessages.ErrOperationIsRestrictedOnNonLeader
 	}
 	opPayload := fsm.CommandPayload{
 		Operation: fsm.OperationChannelDelete,
@@ -100,7 +96,7 @@ func (m *SchedulerChannelManager) DeleteChannel(ID string) error {
 
 func (m *SchedulerChannelManager) UpdateChannel(ID string, channelInput channel.Channel) (*channel.Channel, error) {
 	if m.cluster.State() != raft.Leader {
-		return nil, ErrOperationIsRestrictedOnNonLeader
+		return nil, errormessages.ErrOperationIsRestrictedOnNonLeader
 	}
 	opPayload := fsm.CommandPayload{
 		Operation: fsm.OperationChannelUpdate,
