@@ -4,10 +4,11 @@ import (
 	"context"
 	"github.com/enriquebris/goconcurrentqueue"
 	"github.com/hashicorp/raft"
-	"github.com/maksimru/event-scheduler/config"
+	"github.com/maksimru/event-scheduler/channel"
 	"github.com/maksimru/event-scheduler/fsm"
 	"github.com/maksimru/event-scheduler/message"
 	"github.com/maksimru/event-scheduler/publisher"
+	pubsubconfig "github.com/maksimru/event-scheduler/publisher/config"
 	"github.com/maksimru/event-scheduler/publisher/pubsub"
 	"github.com/maksimru/event-scheduler/storage"
 	"github.com/stretchr/testify/assert"
@@ -21,12 +22,14 @@ func TestProcessor_Boot(t *testing.T) {
 		publisher   publisher.Publisher
 		dataStorage *storage.PqStorage
 		cluster     *raft.Raft
+		channel     channel.Channel
 	}
 	type args struct {
 		publisher   publisher.Publisher
 		dataStorage *storage.PqStorage
 		context     context.Context
 		cluster     *raft.Raft
+		channel     channel.Channel
 	}
 	publisherProvider := new(pubsub.Publisher)
 	dataStorage := storage.NewPqStorage()
@@ -42,12 +45,14 @@ func TestProcessor_Boot(t *testing.T) {
 				publisher:   publisherProvider,
 				dataStorage: dataStorage,
 				cluster:     &raft.Raft{},
+				channel:     channel.Channel{ID: "ch1"},
 			},
 			args: args{
 				publisher:   publisherProvider,
 				dataStorage: dataStorage,
 				context:     context.Background(),
 				cluster:     &raft.Raft{},
+				channel:     channel.Channel{ID: "ch1"},
 			},
 			wantErr: false,
 		},
@@ -60,12 +65,21 @@ func TestProcessor_Boot(t *testing.T) {
 				cluster:     tt.fields.cluster,
 			}
 			if !tt.wantErr {
-				assert.NoError(t, p.Boot(tt.args.context, tt.args.publisher, tt.args.dataStorage, tt.args.cluster))
+				assert.NoError(t, p.Boot(tt.args.context, tt.args.publisher, tt.args.dataStorage, tt.args.cluster, tt.args.channel))
 			} else {
-				assert.Error(t, p.Boot(tt.args.context, tt.args.publisher, tt.args.dataStorage, tt.args.cluster))
+				assert.Error(t, p.Boot(tt.args.context, tt.args.publisher, tt.args.dataStorage, tt.args.cluster, tt.args.channel))
 			}
 		})
 	}
+}
+
+func inmemConfig() *raft.Config {
+	conf := raft.DefaultConfig()
+	conf.HeartbeatTimeout = 50 * time.Millisecond
+	conf.ElectionTimeout = 50 * time.Millisecond
+	conf.LeaderLeaseTimeout = 50 * time.Millisecond
+	conf.CommitTimeout = 5 * time.Millisecond
+	return conf
 }
 
 func bootStagingCluster(nodeId string, pqStorage *storage.PqStorage) (*raft.Raft, raft.ServerAddress) {
@@ -74,7 +88,7 @@ func bootStagingCluster(nodeId string, pqStorage *storage.PqStorage) (*raft.Raft
 	snapshotStore := raft.NewInmemSnapshotStore()
 	raftTransportTcpAddr := raft.NewInmemAddr()
 	_, transport := raft.NewInmemTransport(raftTransportTcpAddr)
-	raftconfig := raft.DefaultConfig()
+	raftconfig := inmemConfig()
 	raftconfig.LogLevel = "info"
 	raftconfig.LocalID = raft.ServerID(nodeId)
 	raftconfig.SnapshotThreshold = 512
@@ -87,8 +101,10 @@ func bootStagingCluster(nodeId string, pqStorage *storage.PqStorage) (*raft.Raft
 
 func TestProcessor_Process(t *testing.T) {
 	type fields struct {
-		dataStorage *storage.PqStorage
-		time        CurrentTimeChecker
+		dataStorage       *storage.PqStorage
+		time              CurrentTimeChecker
+		channel           channel.Channel
+		availableChannels []channel.Channel
 	}
 
 	tests := []struct {
@@ -102,10 +118,26 @@ func TestProcessor_Process(t *testing.T) {
 		wantPublished []message.Message
 	}{
 		{
-			name: "Check prioritizer can move old messages to dispatch (as cluster leader)",
+			name: "Check processor can move old messages to dispatch (as cluster leader)",
 			fields: fields{
 				dataStorage: storage.NewPqStorage(),
 				time:        RealTime{},
+				channel: channel.Channel{
+					ID: "ch1",
+					Destination: channel.Destination{
+						Driver: "pubsub",
+						Config: pubsubconfig.DestinationConfig{},
+					},
+				},
+				availableChannels: []channel.Channel{
+					{
+						ID: "ch1",
+						Destination: channel.Destination{
+							Driver: "pubsub",
+							Config: pubsubconfig.DestinationConfig{},
+						},
+					},
+				},
 			},
 			storageData: []message.Message{
 				message.NewMessage("msg2", 400),
@@ -126,10 +158,26 @@ func TestProcessor_Process(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "Check prioritizer don't move messages if they are not ready for dispatch (as cluster leader)",
+			name: "Check processor doesn't move messages if they are not ready for dispatch (as cluster leader)",
 			fields: fields{
 				dataStorage: storage.NewPqStorage(),
 				time:        NewMockTime(time.Unix(0, 0)), // simulate 0 timestamp
+				channel: channel.Channel{
+					ID: "ch1",
+					Destination: channel.Destination{
+						Driver: "pubsub",
+						Config: pubsubconfig.DestinationConfig{},
+					},
+				},
+				availableChannels: []channel.Channel{
+					{
+						ID: "ch1",
+						Destination: channel.Destination{
+							Driver: "pubsub",
+							Config: pubsubconfig.DestinationConfig{},
+						},
+					},
+				},
 			},
 			storageData: []message.Message{
 				message.NewMessage("msg2", 400),
@@ -150,10 +198,26 @@ func TestProcessor_Process(t *testing.T) {
 			wantErr:       false,
 		},
 		{
-			name: "Check prioritizer can partially dispatch prepared messages on time (as cluster leader)",
+			name: "Check processor can partially dispatch prepared messages on time (as cluster leader)",
 			fields: fields{
 				dataStorage: storage.NewPqStorage(),
 				time:        NewMockTime(time.Unix(600, 0)), // simulate 600 timestamp
+				channel: channel.Channel{
+					ID: "ch1",
+					Destination: channel.Destination{
+						Driver: "pubsub",
+						Config: pubsubconfig.DestinationConfig{},
+					},
+				},
+				availableChannels: []channel.Channel{
+					{
+						ID: "ch1",
+						Destination: channel.Destination{
+							Driver: "pubsub",
+							Config: pubsubconfig.DestinationConfig{},
+						},
+					},
+				},
 			},
 			storageData: []message.Message{
 				message.NewMessage("msg2", 400),
@@ -175,10 +239,26 @@ func TestProcessor_Process(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "Check prioritizer can't move old messages to dispatch (as cluster slave)",
+			name: "Check processor can't move old messages to dispatch (as cluster slave)",
 			fields: fields{
 				dataStorage: storage.NewPqStorage(),
 				time:        RealTime{},
+				channel: channel.Channel{
+					ID: "ch1",
+					Destination: channel.Destination{
+						Driver: "pubsub",
+						Config: pubsubconfig.DestinationConfig{},
+					},
+				},
+				availableChannels: []channel.Channel{
+					{
+						ID: "ch1",
+						Destination: channel.Destination{
+							Driver: "pubsub",
+							Config: pubsubconfig.DestinationConfig{},
+						},
+					},
+				},
 			},
 			storageData: []message.Message{
 				message.NewMessage("msg2", 400),
@@ -201,7 +281,7 @@ func TestProcessor_Process(t *testing.T) {
 
 			outboundQueue := goconcurrentqueue.NewFIFO()
 			publisherInstance := new(pubsub.Publisher)
-			_ = publisherInstance.Boot(ctx, config.Config{}, outboundQueue)
+			_ = publisherInstance.Boot(ctx, tt.fields.channel, outboundQueue)
 
 			nodeId := string(rune(testID))
 			cluster, clusterAddr := bootStagingCluster(nodeId, tt.fields.dataStorage)
@@ -212,9 +292,10 @@ func TestProcessor_Process(t *testing.T) {
 			p := &Processor{
 				publisher:   publisherInstance,
 				dataStorage: tt.fields.dataStorage,
-				context:     ctx,
 				time:        tt.fields.time,
+				context:     ctx,
 				cluster:     cluster,
+				channel:     tt.fields.channel,
 			}
 
 			// boot required cluster
@@ -227,8 +308,16 @@ func TestProcessor_Process(t *testing.T) {
 			}})
 
 			// insert requested input
+			for _, c := range tt.fields.availableChannels {
+				_, _ = p.dataStorage.AddChannel(c)
+			}
+
+			// wait for election
+			time.Sleep(time.Second * 1)
+
+			chStorage, _ := p.dataStorage.GetChannelStorage(tt.fields.channel.ID)
 			for _, msg := range tt.storageData {
-				p.dataStorage.Enqueue(msg)
+				chStorage.Enqueue(msg)
 			}
 
 			// execute prioritizer
@@ -237,10 +326,11 @@ func TestProcessor_Process(t *testing.T) {
 			} else {
 				assert.Error(t, p.Process())
 			}
+
 			// validate unprocessed records
 			gotStorage := []message.Message{}
-			for !p.dataStorage.IsEmpty() {
-				gotStorage = append(gotStorage, p.dataStorage.Dequeue())
+			for !chStorage.IsEmpty() {
+				gotStorage = append(gotStorage, chStorage.Dequeue())
 			}
 			if !reflect.DeepEqual(gotStorage, tt.wantStorage) {
 				assert.Equal(t, tt.wantStorage, gotStorage)

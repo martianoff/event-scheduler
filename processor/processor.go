@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/hashicorp/raft"
+	"github.com/maksimru/event-scheduler/channel"
 	"github.com/maksimru/event-scheduler/fsm"
 	"github.com/maksimru/event-scheduler/message"
 	"github.com/maksimru/event-scheduler/publisher"
@@ -18,6 +19,7 @@ type Processor struct {
 	context     context.Context
 	time        CurrentTimeChecker
 	cluster     *raft.Raft
+	channel     channel.Channel
 }
 
 func (p *Processor) SetTime(time CurrentTimeChecker) {
@@ -56,11 +58,16 @@ func (p *Processor) Process() error {
 		default:
 		}
 		now := int(p.time.Now().Unix())
-		if p.cluster.State() == raft.Leader && p.dataStorage.CheckScheduled(now) {
+		chStorage, chExists := p.dataStorage.GetChannelStorage(p.channel.ID)
+		if !chExists {
+			log.Warn("channel storage is not found (channel ", p.channel.ID, ") - processor is stopped")
+			return nil
+		}
+		if p.cluster.State() == raft.Leader && chStorage.CheckScheduled(now) {
 			// dequeue through FSM
 			opPayload := fsm.CommandPayload{
-				Operation: fsm.OperationPop,
-				Value:     nil,
+				ChannelID: p.channel.ID,
+				Operation: fsm.OperationMessagePop,
 			}
 			opPayloadData, err := json.Marshal(opPayload)
 			if err != nil {
@@ -94,11 +101,12 @@ func (p *Processor) Process() error {
 	}
 }
 
-func (p *Processor) Boot(ctx context.Context, publisher publisher.Publisher, dataStorage *storage.PqStorage, cluster *raft.Raft) error {
+func (p *Processor) Boot(ctx context.Context, publisher publisher.Publisher, dataStorage *storage.PqStorage, cluster *raft.Raft, channel channel.Channel) error {
 	p.context = ctx
 	p.publisher = publisher
 	p.dataStorage = dataStorage
 	p.time = RealTime{}
 	p.cluster = cluster
+	p.channel = channel
 	return nil
 }

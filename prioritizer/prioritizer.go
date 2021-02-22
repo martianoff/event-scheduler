@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/hashicorp/raft"
+	"github.com/maksimru/event-scheduler/channel"
 	"github.com/maksimru/event-scheduler/fsm"
 	"github.com/maksimru/event-scheduler/message"
 	log "github.com/sirupsen/logrus"
@@ -14,11 +15,12 @@ type Prioritizer struct {
 	cluster *raft.Raft
 }
 
-func (p *Prioritizer) Persist(persistedMsg message.Message) error {
+func (p *Prioritizer) Persist(persistedMsg message.Message, channel channel.Channel) error {
 	// push through FSM
 	opPayload := fsm.CommandPayload{
-		Operation: fsm.OperationPush,
-		Value:     &persistedMsg,
+		Operation: fsm.OperationMessagePush,
+		Message:   persistedMsg,
+		ChannelID: channel.ID,
 	}
 	opPayloadData, err := json.Marshal(opPayload)
 	if err != nil {
