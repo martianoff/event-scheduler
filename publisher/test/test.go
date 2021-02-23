@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/enriquebris/goconcurrentqueue"
-	"github.com/maksimru/event-scheduler/config"
+	"github.com/maksimru/event-scheduler/channel"
 	"github.com/maksimru/event-scheduler/message"
 )
 
@@ -12,7 +12,7 @@ type Publisher struct {
 	broken bool
 }
 
-func (p *Publisher) Boot(context.Context, config.Config, *goconcurrentqueue.FIFO) error {
+func (p *Publisher) Boot(context.Context, channel.Channel, *goconcurrentqueue.FIFO) error {
 	p.broken = false
 	return nil
 }

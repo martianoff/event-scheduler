@@ -5,8 +5,9 @@ import (
 	"cloud.google.com/go/pubsub/pstest"
 	"context"
 	"github.com/enriquebris/goconcurrentqueue"
-	"github.com/maksimru/event-scheduler/config"
+	"github.com/maksimru/event-scheduler/channel"
 	"github.com/maksimru/event-scheduler/message"
+	pubsubconfig "github.com/maksimru/event-scheduler/publisher/config"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
@@ -19,35 +20,33 @@ import (
 )
 
 func TestPubsubPublisher_Boot(t *testing.T) {
-	type fields struct {
-		config       config.Config
-		outboundPool *goconcurrentqueue.FIFO
-	}
 	type args struct {
 		context      context.Context
-		config       config.Config
+		config       channel.DestinationConfig
 		outboundPool *goconcurrentqueue.FIFO
+		channel      channel.Channel
 	}
 	dir := getProjectPath()
-	cfg := config.Config{
-		PubsubPublisherKeyFile: dir + "/tests/pubsub_cred_mock.json",
-	}
 	outboundPool := goconcurrentqueue.NewFIFO()
 	tests := []struct {
 		name    string
-		fields  fields
 		args    args
 		wantErr bool
 	}{
 		{
 			name: "Checks pubsub publisher boot",
-			fields: fields{
-				config:       cfg,
-				outboundPool: outboundPool,
-			},
 			args: args{
-				context:      context.Background(),
-				config:       cfg,
+				context: context.Background(),
+				channel: channel.Channel{
+					Destination: channel.Destination{
+						Driver: "pubsub",
+						Config: pubsubconfig.DestinationConfig{
+							ProjectID: "pr",
+							TopicID:   "topic",
+							KeyFile:   dir + "/tests/pubsub_cred_mock.json",
+						},
+					},
+				},
 				outboundPool: outboundPool,
 			},
 			wantErr: false,
@@ -55,14 +54,11 @@ func TestPubsubPublisher_Boot(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &Publisher{
-				config:       tt.fields.config,
-				outboundPool: tt.fields.outboundPool,
-			}
+			p := &Publisher{}
 			if !tt.wantErr {
-				assert.NoError(t, p.Boot(tt.args.context, tt.args.config, tt.args.outboundPool))
+				assert.NoError(t, p.Boot(tt.args.context, tt.args.channel, tt.args.outboundPool))
 			} else {
-				assert.Error(t, p.Boot(tt.args.context, tt.args.config, tt.args.outboundPool))
+				assert.Error(t, p.Boot(tt.args.context, tt.args.channel, tt.args.outboundPool))
 			}
 		})
 	}
@@ -70,7 +66,7 @@ func TestPubsubPublisher_Boot(t *testing.T) {
 
 func TestPubsubPublisher_Push(t *testing.T) {
 	type fields struct {
-		config       config.Config
+		config       pubsubconfig.DestinationConfig
 		outboundPool *goconcurrentqueue.FIFO
 	}
 	type args struct {
@@ -87,7 +83,7 @@ func TestPubsubPublisher_Push(t *testing.T) {
 		{
 			name: "Checks pubsub publisher pending push method",
 			fields: fields{
-				config:       config.Config{},
+				config:       pubsubconfig.DestinationConfig{},
 				outboundPool: goconcurrentqueue.NewFIFO(),
 			},
 			args: args{
@@ -98,7 +94,7 @@ func TestPubsubPublisher_Push(t *testing.T) {
 		{
 			name: "Checks pubsub publisher pending push with locked dispatch pool",
 			fields: fields{
-				config:       config.Config{},
+				config:       pubsubconfig.DestinationConfig{},
 				outboundPool: lockedDispatchQueue,
 			},
 			args: args{
@@ -131,7 +127,7 @@ func getProjectPath() string {
 func Test_makePubsubClient(t *testing.T) {
 	type args struct {
 		ctx    context.Context
-		config config.Config
+		config pubsubconfig.DestinationConfig
 	}
 	dir := getProjectPath()
 	tests := []struct {
@@ -144,9 +140,9 @@ func Test_makePubsubClient(t *testing.T) {
 			name: "Check make pubsub client with proper configuration",
 			args: args{
 				ctx: context.Background(),
-				config: config.Config{
-					PubsubPublisherProjectID: "testProjectId",
-					PubsubPublisherKeyFile:   dir + "/tests/pubsub_cred_mock.json",
+				config: pubsubconfig.DestinationConfig{
+					ProjectID: "testProjectId",
+					KeyFile:   dir + "/tests/pubsub_cred_mock.json",
 				},
 			},
 			wantErr: false,
@@ -166,13 +162,13 @@ func Test_makePubsubClient(t *testing.T) {
 	}
 }
 
-func mockPubsubClient(ctx context.Context, t *testing.T, pubsubServerConn *grpc.ClientConn, cfg config.Config) (*pubsub.Client, *pubsub.Topic) {
+func mockPubsubClient(ctx context.Context, t *testing.T, pubsubServerConn *grpc.ClientConn, cfg pubsubconfig.DestinationConfig) (*pubsub.Client, *pubsub.Topic) {
 	pubsubClient, _ := pubsub.NewClient(ctx, "", option.WithGRPCConn(pubsubServerConn))
-	topic, err := pubsubClient.CreateTopic(ctx, cfg.PubsubPublisherTopicID)
+	topic, err := pubsubClient.CreateTopic(ctx, cfg.TopicID)
 	if err != nil {
 		t.Error(err)
 	}
-	_, _ = pubsubClient.CreateSubscription(ctx, cfg.PubsubPublisherTopicID, pubsub.SubscriptionConfig{
+	_, _ = pubsubClient.CreateSubscription(ctx, cfg.TopicID, pubsub.SubscriptionConfig{
 		Topic: topic,
 	})
 	return pubsubClient, topic
@@ -231,8 +227,8 @@ func TestPubsubPublisher_Dispatch(t *testing.T) {
 			ctx, cancel := context.WithTimeout(ctx, time.Second*3)
 			defer cancel()
 
-			cfg := config.Config{
-				PubsubPublisherTopicID: "mocksubscription" + strconv.Itoa(testID),
+			cfg := pubsubconfig.DestinationConfig{
+				TopicID: "mocksubscription" + strconv.Itoa(testID),
 			}
 			// make pubsub client-server connection
 			pubsubServerConn, _ := grpc.Dial(pubsubServer.Addr, grpc.WithInsecure())

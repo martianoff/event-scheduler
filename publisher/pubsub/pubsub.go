@@ -4,8 +4,9 @@ import (
 	"cloud.google.com/go/pubsub"
 	"context"
 	"github.com/enriquebris/goconcurrentqueue"
-	"github.com/maksimru/event-scheduler/config"
+	"github.com/maksimru/event-scheduler/channel"
 	"github.com/maksimru/event-scheduler/message"
+	pubsubconfig "github.com/maksimru/event-scheduler/publisher/config"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/api/option"
 	"sync"
@@ -16,16 +17,15 @@ import (
 const DispatcherThreads = 5
 
 type Publisher struct {
-	config       config.Config
+	config       pubsubconfig.DestinationConfig
 	outboundPool *goconcurrentqueue.FIFO
 	client       *pubsub.Client
 	context      context.Context
 }
 
-func (p *Publisher) Boot(ctx context.Context, config config.Config, outboundPool *goconcurrentqueue.FIFO) error {
-	p.config = config
-	p.outboundPool = outboundPool
-	client, err := makePubsubClient(ctx, config)
+func (p *Publisher) Boot(ctx context.Context, channel channel.Channel, outboundPool *goconcurrentqueue.FIFO) error {
+	p.outboundPool, p.config = outboundPool, channel.Destination.Config.(pubsubconfig.DestinationConfig)
+	client, err := makePubsubClient(ctx, p.config)
 	p.client, p.context = client, ctx
 	return err
 }
@@ -34,8 +34,8 @@ func (p *Publisher) SetPubsubClient(client *pubsub.Client) {
 	p.client = client
 }
 
-func makePubsubClient(ctx context.Context, config config.Config) (*pubsub.Client, error) {
-	client, err := pubsub.NewClient(ctx, config.PubsubPublisherProjectID, option.WithCredentialsFile(config.PubsubPublisherKeyFile))
+func makePubsubClient(ctx context.Context, config pubsubconfig.DestinationConfig) (*pubsub.Client, error) {
+	client, err := pubsub.NewClient(ctx, config.ProjectID, option.WithCredentialsFile(config.KeyFile))
 	if err != nil {
 		log.Error("publisher client boot failure: ", err.Error())
 		return nil, err
@@ -64,7 +64,7 @@ func (p Publisher) Dispatch() error {
 
 	var totalErrors uint64
 
-	t := p.client.Topic(p.config.PubsubPublisherTopicID)
+	t := p.client.Topic(p.config.TopicID)
 
 	var dispatcherWg sync.WaitGroup
 	for threadID := 0; threadID < DispatcherThreads; threadID++ {
