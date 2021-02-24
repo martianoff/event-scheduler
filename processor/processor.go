@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"github.com/hashicorp/raft"
 	"github.com/maksimru/event-scheduler/channel"
+	"github.com/maksimru/event-scheduler/dispatcher"
 	"github.com/maksimru/event-scheduler/fsm"
 	"github.com/maksimru/event-scheduler/message"
 	"github.com/maksimru/event-scheduler/publisher"
@@ -15,6 +16,7 @@ import (
 
 type Processor struct {
 	publisher   publisher.Publisher
+	dispatcher  dispatcher.Dispatcher
 	dataStorage *storage.PqStorage
 	context     context.Context
 	time        CurrentTimeChecker
@@ -89,7 +91,7 @@ func (p *Processor) Process() error {
 
 			log.Trace("processor message is ready for delivery: scheduled for ", msg.GetAvailableAt(), " at ", now)
 
-			err = p.publisher.Push(message.NewMessage(msg.GetBody(), msg.GetAvailableAt()))
+			err = p.dispatcher.Push(message.NewMessage(msg.GetBody(), msg.GetAvailableAt()), p.channel.ID)
 			if err != nil {
 				log.Error("processor message publish exception: scheduled for ", msg.GetAvailableAt(), " at ", now, " ", err.Error())
 				return err
@@ -101,9 +103,9 @@ func (p *Processor) Process() error {
 	}
 }
 
-func (p *Processor) Boot(ctx context.Context, publisher publisher.Publisher, dataStorage *storage.PqStorage, cluster *raft.Raft, channel channel.Channel) error {
+func (p *Processor) Boot(ctx context.Context, dispatcher dispatcher.Dispatcher, dataStorage *storage.PqStorage, cluster *raft.Raft, channel channel.Channel) error {
 	p.context = ctx
-	p.publisher = publisher
+	p.dispatcher = dispatcher
 	p.dataStorage = dataStorage
 	p.time = RealTime{}
 	p.cluster = cluster

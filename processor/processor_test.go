@@ -5,11 +5,10 @@ import (
 	"github.com/enriquebris/goconcurrentqueue"
 	"github.com/hashicorp/raft"
 	"github.com/maksimru/event-scheduler/channel"
+	"github.com/maksimru/event-scheduler/dispatcher"
 	"github.com/maksimru/event-scheduler/fsm"
 	"github.com/maksimru/event-scheduler/message"
-	"github.com/maksimru/event-scheduler/publisher"
 	pubsubconfig "github.com/maksimru/event-scheduler/publisher/config"
-	"github.com/maksimru/event-scheduler/publisher/pubsub"
 	"github.com/maksimru/event-scheduler/storage"
 	"github.com/stretchr/testify/assert"
 	"reflect"
@@ -19,20 +18,20 @@ import (
 
 func TestProcessor_Boot(t *testing.T) {
 	type fields struct {
-		publisher   publisher.Publisher
+		dispatcher  dispatcher.Dispatcher
 		dataStorage *storage.PqStorage
 		cluster     *raft.Raft
 		channel     channel.Channel
 	}
 	type args struct {
-		publisher   publisher.Publisher
+		dispatcher  dispatcher.Dispatcher
 		dataStorage *storage.PqStorage
 		context     context.Context
 		cluster     *raft.Raft
 		channel     channel.Channel
 	}
-	publisherProvider := new(pubsub.Publisher)
 	dataStorage := storage.NewPqStorage()
+	dispatcherProvider := dispatcher.NewDispatcher(context.Background(), goconcurrentqueue.NewFIFO(), dataStorage)
 	tests := []struct {
 		name    string
 		fields  fields
@@ -42,13 +41,13 @@ func TestProcessor_Boot(t *testing.T) {
 		{
 			name: "Check processor boot",
 			fields: fields{
-				publisher:   publisherProvider,
+				dispatcher:  dispatcherProvider,
 				dataStorage: dataStorage,
 				cluster:     &raft.Raft{},
 				channel:     channel.Channel{ID: "ch1"},
 			},
 			args: args{
-				publisher:   publisherProvider,
+				dispatcher:  dispatcherProvider,
 				dataStorage: dataStorage,
 				context:     context.Background(),
 				cluster:     &raft.Raft{},
@@ -60,14 +59,14 @@ func TestProcessor_Boot(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := &Processor{
-				publisher:   tt.fields.publisher,
+				dispatcher:  tt.fields.dispatcher,
 				dataStorage: tt.fields.dataStorage,
 				cluster:     tt.fields.cluster,
 			}
 			if !tt.wantErr {
-				assert.NoError(t, p.Boot(tt.args.context, tt.args.publisher, tt.args.dataStorage, tt.args.cluster, tt.args.channel))
+				assert.NoError(t, p.Boot(tt.args.context, tt.args.dispatcher, tt.args.dataStorage, tt.args.cluster, tt.args.channel))
 			} else {
-				assert.Error(t, p.Boot(tt.args.context, tt.args.publisher, tt.args.dataStorage, tt.args.cluster, tt.args.channel))
+				assert.Error(t, p.Boot(tt.args.context, tt.args.dispatcher, tt.args.dataStorage, tt.args.cluster, tt.args.channel))
 			}
 		})
 	}
@@ -280,8 +279,7 @@ func TestProcessor_Process(t *testing.T) {
 			defer cancel()
 
 			outboundQueue := goconcurrentqueue.NewFIFO()
-			publisherInstance := new(pubsub.Publisher)
-			_ = publisherInstance.Boot(ctx, tt.fields.channel, outboundQueue)
+			dispatcherInstance := dispatcher.NewDispatcher(ctx, outboundQueue, tt.fields.dataStorage)
 
 			nodeId := string(rune(testID))
 			cluster, clusterAddr := bootStagingCluster(nodeId, tt.fields.dataStorage)
@@ -290,7 +288,7 @@ func TestProcessor_Process(t *testing.T) {
 			}()
 
 			p := &Processor{
-				publisher:   publisherInstance,
+				dispatcher:  dispatcherInstance,
 				dataStorage: tt.fields.dataStorage,
 				time:        tt.fields.time,
 				context:     ctx,
@@ -339,7 +337,8 @@ func TestProcessor_Process(t *testing.T) {
 			gotPublished := []message.Message{}
 			for outboundQueue.GetLen() > 0 {
 				msg, _ := outboundQueue.Dequeue()
-				gotPublished = append(gotPublished, msg.(message.Message))
+				delivery := msg.(dispatcher.MessageForDelivery)
+				gotPublished = append(gotPublished, delivery.GetMessage())
 			}
 			if !reflect.DeepEqual(gotPublished, tt.wantPublished) {
 				assert.Equal(t, tt.wantPublished, gotPublished)

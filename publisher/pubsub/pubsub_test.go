@@ -4,7 +4,6 @@ import (
 	"cloud.google.com/go/pubsub"
 	"cloud.google.com/go/pubsub/pstest"
 	"context"
-	"github.com/enriquebris/goconcurrentqueue"
 	"github.com/maksimru/event-scheduler/channel"
 	"github.com/maksimru/event-scheduler/message"
 	pubsubconfig "github.com/maksimru/event-scheduler/publisher/config"
@@ -19,101 +18,42 @@ import (
 	"time"
 )
 
-func TestPubsubPublisher_Boot(t *testing.T) {
+func TestNewPubSubPublisher(t *testing.T) {
 	type args struct {
-		context      context.Context
-		config       channel.DestinationConfig
-		outboundPool *goconcurrentqueue.FIFO
-		channel      channel.Channel
+		context context.Context
+		config  channel.DestinationConfig
 	}
 	dir := getProjectPath()
-	outboundPool := goconcurrentqueue.NewFIFO()
 	tests := []struct {
-		name    string
-		args    args
-		wantErr bool
+		name string
+		args args
+		want Publisher
 	}{
 		{
-			name: "Checks pubsub publisher boot",
+			name: "Checks pubsub publisher constructor",
 			args: args{
 				context: context.Background(),
-				channel: channel.Channel{
-					Destination: channel.Destination{
-						Driver: "pubsub",
-						Config: pubsubconfig.DestinationConfig{
-							ProjectID: "pr",
-							TopicID:   "topic",
-							KeyFile:   dir + "/tests/pubsub_cred_mock.json",
-						},
-					},
+				config: pubsubconfig.DestinationConfig{
+					ProjectID: "pr",
+					TopicID:   "topic",
+					KeyFile:   dir + "/tests/pubsub_cred_mock.json",
 				},
-				outboundPool: outboundPool,
 			},
-			wantErr: false,
+			want: Publisher{
+				config: pubsubconfig.DestinationConfig{
+					ProjectID: "pr",
+					TopicID:   "topic",
+					KeyFile:   dir + "/tests/pubsub_cred_mock.json",
+				},
+				context: context.Background(),
+			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &Publisher{}
-			if !tt.wantErr {
-				assert.NoError(t, p.Boot(tt.args.context, tt.args.channel, tt.args.outboundPool))
-			} else {
-				assert.Error(t, p.Boot(tt.args.context, tt.args.channel, tt.args.outboundPool))
-			}
-		})
-	}
-}
-
-func TestPubsubPublisher_Push(t *testing.T) {
-	type fields struct {
-		config       pubsubconfig.DestinationConfig
-		outboundPool *goconcurrentqueue.FIFO
-	}
-	type args struct {
-		msg message.Message
-	}
-	lockedDispatchQueue := goconcurrentqueue.NewFIFO()
-	lockedDispatchQueue.Lock()
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		wantErr bool
-	}{
-		{
-			name: "Checks pubsub publisher pending push method",
-			fields: fields{
-				config:       pubsubconfig.DestinationConfig{},
-				outboundPool: goconcurrentqueue.NewFIFO(),
-			},
-			args: args{
-				message.NewMessage("foo", 1000),
-			},
-			wantErr: false,
-		},
-		{
-			name: "Checks pubsub publisher pending push with locked dispatch pool",
-			fields: fields{
-				config:       pubsubconfig.DestinationConfig{},
-				outboundPool: lockedDispatchQueue,
-			},
-			args: args{
-				message.NewMessage("foo", 1000),
-			},
-			wantErr: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			p := &Publisher{
-				config:       tt.fields.config,
-				outboundPool: tt.fields.outboundPool,
-			}
-			if !tt.wantErr {
-				assert.NoError(t, p.Push(tt.args.msg))
-			} else {
-				assert.Error(t, p.Push(tt.args.msg))
-			}
+			p := NewPubSubPublisher(tt.args.context, tt.args.config)
+			tt.want.SetPubsubClient(p.client)
+			assert.Equal(t, tt.want, p)
 		})
 	}
 }
@@ -175,21 +115,14 @@ func mockPubsubClient(ctx context.Context, t *testing.T, pubsubServerConn *grpc.
 }
 
 func TestPubsubPublisher_Dispatch(t *testing.T) {
-	type fields struct {
-		outboundPool *goconcurrentqueue.FIFO
-	}
 	tests := []struct {
 		name    string
-		fields  fields
 		wantErr bool
 		publish []message.Message
 		want    []pubsub.Message
 	}{
 		{
-			name: "Check pubsub publisher can publish single message",
-			fields: fields{
-				outboundPool: goconcurrentqueue.NewFIFO(),
-			},
+			name:    "Check pubsub publisher can publish single message",
 			publish: []message.Message{message.NewMessage("foo", 1000)},
 			wantErr: false,
 			want: []pubsub.Message{{
@@ -198,9 +131,6 @@ func TestPubsubPublisher_Dispatch(t *testing.T) {
 		},
 		{
 			name: "Check pubsub publisher can publish multiple message",
-			fields: fields{
-				outboundPool: goconcurrentqueue.NewFIFO(),
-			},
 			publish: []message.Message{
 				message.NewMessage("msg1", 1000),
 				message.NewMessage("msg2", 1100),
@@ -224,7 +154,7 @@ func TestPubsubPublisher_Dispatch(t *testing.T) {
 			}()
 			// mock individual context for each test
 			ctx := context.Background()
-			ctx, cancel := context.WithTimeout(ctx, time.Second*3)
+			ctx, cancel := context.WithTimeout(ctx, time.Second*1)
 			defer cancel()
 
 			cfg := pubsubconfig.DestinationConfig{
@@ -238,21 +168,18 @@ func TestPubsubPublisher_Dispatch(t *testing.T) {
 			pubsubClient, _ := mockPubsubClient(ctx, t, pubsubServerConn, cfg)
 
 			p := &Publisher{
-				config:       cfg,
-				outboundPool: tt.fields.outboundPool,
-				client:       pubsubClient,
-				context:      ctx,
+				config:  cfg,
+				client:  pubsubClient,
+				context: ctx,
 			}
 
 			// mock outbound queue
 			for _, msg := range tt.publish {
-				_ = p.outboundPool.Enqueue(msg)
-			}
-
-			if !tt.wantErr {
-				assert.NoError(t, p.Dispatch())
-			} else {
-				assert.Error(t, p.Dispatch())
+				if !tt.wantErr {
+					assert.NoError(t, p.Dispatch(msg))
+				} else {
+					assert.Error(t, p.Dispatch(msg))
+				}
 			}
 
 			// read pushed messages
@@ -268,6 +195,48 @@ func TestPubsubPublisher_Dispatch(t *testing.T) {
 			// compare received messages
 			if !reflect.DeepEqual(got, tt.want) {
 				assert.ElementsMatch(t, tt.want, got)
+			}
+		})
+	}
+}
+
+func TestPublisher_Close(t *testing.T) {
+	type fields struct {
+		config  pubsubconfig.DestinationConfig
+		context context.Context
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		wantErr bool
+	}{
+		{
+			name: "Check publisher close",
+			fields: fields{
+				config:  pubsubconfig.DestinationConfig{},
+				context: context.Background(),
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := getProjectPath()
+			client, _ := makePubsubClient(tt.fields.context, pubsubconfig.DestinationConfig{
+				ProjectID: "pr",
+				TopicID:   "topic",
+				KeyFile:   dir + "/tests/pubsub_cred_mock.json",
+			})
+			p := Publisher{
+				config:  tt.fields.config,
+				client:  client,
+				context: tt.fields.context,
+			}
+			err := p.Close()
+			if !tt.wantErr {
+				assert.NoError(t, err)
+			} else {
+				assert.Error(t, err)
 			}
 		})
 	}
