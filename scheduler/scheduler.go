@@ -87,8 +87,9 @@ func NewScheduler(ctx context.Context, config config.Config) *Scheduler {
 	scheduler.dataStorage = storage.NewPqStorage()
 	scheduler.dispatcher = dispatcher.NewDispatcher(ctx, scheduler.outboundPool, scheduler.dataStorage)
 	scheduler.channelHandler = channel.NewEventHandler(scheduler.channelUpdated(ctx), scheduler.channelDeleted(ctx), scheduler.channelAdded(ctx))
-	scheduler.BootHttpServer(ctx)
 	scheduler.BootCluster(ctx)
+	// web server should be booted after the cluster
+	scheduler.BootHttpServer(ctx)
 	scheduler.BootPrioritizer(ctx)
 	scheduler.BootRaftManager(ctx)
 	scheduler.BootChannelManager(ctx)
