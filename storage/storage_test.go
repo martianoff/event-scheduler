@@ -734,6 +734,30 @@ func TestPqStorage_Dump(t *testing.T) {
 				"ch2": {message.NewMessage("msg4", 3000), message.NewMessage("msg5", 3000), message.NewMessage("msg6", 3500)},
 			},
 		},
+		{
+			name: "Check storage dump with multiple channels, swapped channels",
+			fields: fields{
+				mutex:    &sync.Mutex{},
+				channels: map[string]channel.Channel{"ch1": {ID: "ch1"}, "ch2": {ID: "ch2"}},
+				data:     map[string]PqChannelStorage{"ch1": NewPqChannelStorage(), "ch2": NewPqChannelStorage()},
+			},
+			msgs: map[string][]message.Message{
+				"ch1": {message.NewMessage("msg1", 2000), message.NewMessage("msg2", 1000), message.NewMessage("msg3", 2500)},
+				"ch2": {message.NewMessage("msg4", 3000), message.NewMessage("msg5", 3000), message.NewMessage("msg6", 3500)},
+			},
+			wantChannels: []channel.Channel{
+				{
+					ID: "ch1",
+				},
+				{
+					ID: "ch2",
+				},
+			},
+			wantMsgs: map[string][]message.Message{
+				"ch2": {message.NewMessage("msg4", 3000), message.NewMessage("msg5", 3000), message.NewMessage("msg6", 3500)},
+				"ch1": {message.NewMessage("msg1", 2000), message.NewMessage("msg2", 1000), message.NewMessage("msg3", 2500)},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -749,8 +773,8 @@ func TestPqStorage_Dump(t *testing.T) {
 				}
 			}
 			gotChannels, gotMsgs := p.Dump()
-			assert.EqualValues(t, tt.wantChannels, gotChannels)
-			assert.EqualValues(t, tt.wantMsgs, gotMsgs)
+			assert.True(t, reflect.DeepEqual(tt.wantChannels, gotChannels))
+			assert.True(t, reflect.DeepEqual(tt.wantMsgs, gotMsgs))
 		})
 	}
 }
