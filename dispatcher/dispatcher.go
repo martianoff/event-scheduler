@@ -16,7 +16,7 @@ import (
 const DispatcherThreads = 5
 
 type Dispatcher interface {
-	Push(message.Message, string) error
+	Push(msg message.Message, channelID string) error
 	Dispatch() error
 }
 
@@ -43,6 +43,10 @@ func NewDispatcher(ctx context.Context, outboundPool *goconcurrentqueue.FIFO, da
 		publishers:   make(map[string]publisher.Publisher),
 		dataStorage:  dataStorage,
 	}
+}
+
+func (d *MessageDispatcher) SetPublisher(channelID string, p publisher.Publisher) {
+	d.publishers[channelID] = p
 }
 
 func (d *MessageDispatcher) getChannelPublisher(channelID string) (publisher.Publisher, error) {

@@ -21,6 +21,11 @@ func TestSchedulerChannelManagerServer_BootChannelManagerServer(t *testing.T) {
 		manager    ChannelManager
 		httpServer *echo.Echo
 	}
+	m := NewSchedulerChannelManager(
+		&raft.Raft{},
+		storage.NewPqStorage(),
+		nil,
+	)
 	tests := []struct {
 		name    string
 		args    args
@@ -30,17 +35,11 @@ func TestSchedulerChannelManagerServer_BootChannelManagerServer(t *testing.T) {
 		{
 			name: "Check channel manager server boot",
 			args: args{
-				manager: &SchedulerChannelManager{
-					cluster: &raft.Raft{},
-					storage: storage.NewPqStorage(),
-				},
+				manager:    m,
 				httpServer: echo.New(),
 			},
 			want: SchedulerChannelManagerServer{
-				manager: &SchedulerChannelManager{
-					cluster: &raft.Raft{},
-					storage: storage.NewPqStorage(),
-				},
+				manager:    m,
 				httpServer: echo.New(),
 			},
 			wantErr: false,
@@ -107,10 +106,11 @@ func TestSchedulerChannelManagerServer_AddChannel(t *testing.T) {
 			// wait for election
 			time.Sleep(time.Second * 1)
 
-			m := &SchedulerChannelManager{
-				cluster: cluster,
-				storage: pqStorage,
-			}
+			m := NewSchedulerChannelManager(
+				cluster,
+				pqStorage,
+				nil,
+			)
 
 			ms := &SchedulerChannelManagerServer{
 				manager:    m,
@@ -210,10 +210,11 @@ func TestSchedulerChannelManagerServer_DeleteChannel(t *testing.T) {
 				_, _ = pqStorage.AddChannel(c)
 			}
 
-			m := &SchedulerChannelManager{
-				cluster: cluster,
-				storage: pqStorage,
-			}
+			m := NewSchedulerChannelManager(
+				cluster,
+				pqStorage,
+				nil,
+			)
 
 			ms := &SchedulerChannelManagerServer{
 				manager:    m,
@@ -314,10 +315,11 @@ func TestSchedulerChannelManagerServer_UpdateChannel(t *testing.T) {
 				_, _ = pqStorage.AddChannel(c)
 			}
 
-			m := &SchedulerChannelManager{
-				cluster: cluster,
-				storage: pqStorage,
-			}
+			m := NewSchedulerChannelManager(
+				cluster,
+				pqStorage,
+				nil,
+			)
 
 			ms := &SchedulerChannelManagerServer{
 				manager:    m,
@@ -396,10 +398,11 @@ func TestSchedulerChannelManagerServer_ListChannels(t *testing.T) {
 				_, _ = pqStorage.AddChannel(c)
 			}
 
-			m := &SchedulerChannelManager{
-				cluster: cluster,
-				storage: pqStorage,
-			}
+			m := NewSchedulerChannelManager(
+				cluster,
+				pqStorage,
+				nil,
+			)
 
 			ms := &SchedulerChannelManagerServer{
 				manager:    m,

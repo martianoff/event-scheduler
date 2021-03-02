@@ -12,6 +12,20 @@ spec:
   selector:
     app: event-scheduler
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: event-scheduler-api
+  labels:
+    app: event-scheduler
+spec:
+  ports:
+    - port: 5569
+      name: api
+  type: LoadBalancer
+  selector:
+    app: event-scheduler
+---
 apiVersion: policy/v1beta1
 kind: PodDisruptionBudget
 metadata:
@@ -77,6 +91,8 @@ spec:
               value: key.json
             - name: STORAGE_PATH
               value: /data
+            - name: API_PORT
+              value: 5569
             - name: NODE_NAME
               valueFrom:
                 fieldRef:
@@ -106,4 +122,4 @@ spec:
         storageClassName: "standard"
         resources:
           requests:
-            storage: 2Gi
+            storage: 10Gi

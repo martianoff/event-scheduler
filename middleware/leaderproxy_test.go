@@ -85,7 +85,7 @@ func TestLeaderProxy_Process(t *testing.T) {
 		},
 	}
 	baseAPIport := 5565
-	baseClusterPort := 5555
+	baseClusterPort := 5570
 	for testID, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			nodesTransport := []*raft.NetworkTransport{}

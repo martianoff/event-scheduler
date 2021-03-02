@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"github.com/labstack/echo/v4"
 	"github.com/maksimru/event-scheduler/channel"
-	pubsublistenerconfig "github.com/maksimru/event-scheduler/listener/config"
-	pubsubpublisherconfig "github.com/maksimru/event-scheduler/publisher/config"
+	pubsublistenerconfig "github.com/maksimru/event-scheduler/listener/pubsub/config"
+	pubsubpublisherconfig "github.com/maksimru/event-scheduler/publisher/pubsub/config"
 	"github.com/maksimru/event-scheduler/storage"
 	"net/http"
 )

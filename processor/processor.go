@@ -22,6 +22,7 @@ type Processor struct {
 	time        CurrentTimeChecker
 	cluster     *raft.Raft
 	channel     channel.Channel
+	stopFunc    context.CancelFunc
 }
 
 func (p *Processor) SetTime(time CurrentTimeChecker) {
@@ -51,10 +52,21 @@ func (m MockTime) Now() time.Time {
 	return m.time
 }
 
+func (p *Processor) Stop() error {
+	if p.stopFunc != nil {
+		log.Info("processor stop called")
+		p.stopFunc()
+	}
+	return nil
+}
+
 func (p *Processor) Process() error {
+	ctx, cancelListener := context.WithCancel(p.context)
+	defer cancelListener()
+	p.stopFunc = cancelListener
 	for {
 		select {
-		case <-p.context.Done():
+		case <-ctx.Done():
 			log.Warn("processor is stopped")
 			return nil
 		default:

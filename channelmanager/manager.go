@@ -21,18 +21,24 @@ type ChannelManager interface {
 type SchedulerChannelManager struct {
 	cluster *raft.Raft
 	storage *storage.PqStorage
+	handler *channel.EventHandler
 }
 
-func NewSchedulerChannelManager(cluster *raft.Raft, storage *storage.PqStorage) *SchedulerChannelManager {
+func NewSchedulerChannelManager(cluster *raft.Raft, storage *storage.PqStorage, handler *channel.EventHandler) *SchedulerChannelManager {
+	if handler == nil {
+		handler = channel.NewEventHandler(func(c channel.Channel) {}, func(c channel.Channel) {}, func(c channel.Channel) {})
+	}
 	return &SchedulerChannelManager{
 		cluster: cluster,
 		storage: storage,
+		handler: handler,
 	}
 }
 
-func (m *SchedulerChannelManager) BootChannelManager(cluster *raft.Raft, storage *storage.PqStorage) error {
+func (m *SchedulerChannelManager) BootChannelManager(cluster *raft.Raft, storage *storage.PqStorage, handler *channel.EventHandler) error {
 	m.cluster = cluster
 	m.storage = storage
+	m.handler = handler
 	return nil
 }
 
@@ -66,6 +72,7 @@ func (m *SchedulerChannelManager) AddChannel(channelInput channel.Channel) (*cha
 		return nil, r.Err
 	}
 	c := r.Data.(channel.Channel)
+	m.handler.OnAdded(c)
 	return &c, nil
 }
 
@@ -91,6 +98,8 @@ func (m *SchedulerChannelManager) DeleteChannel(ID string) error {
 	if r.Err != nil {
 		return r.Err
 	}
+	c := r.Data.(channel.Channel)
+	m.handler.OnDeleted(c)
 	return nil
 }
 
@@ -118,5 +127,6 @@ func (m *SchedulerChannelManager) UpdateChannel(ID string, channelInput channel.
 		return nil, r.Err
 	}
 	c := r.Data.(channel.Channel)
+	m.handler.OnUpdated(c)
 	return &c, nil
 }

@@ -8,7 +8,7 @@ import (
 	"github.com/maksimru/event-scheduler/dispatcher"
 	"github.com/maksimru/event-scheduler/fsm"
 	"github.com/maksimru/event-scheduler/message"
-	pubsubconfig "github.com/maksimru/event-scheduler/publisher/config"
+	pubsubconfig "github.com/maksimru/event-scheduler/publisher/pubsub/config"
 	"github.com/maksimru/event-scheduler/storage"
 	"github.com/stretchr/testify/assert"
 	"reflect"

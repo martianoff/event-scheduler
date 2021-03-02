@@ -4,9 +4,9 @@ import (
 	"github.com/hashicorp/raft"
 	"github.com/maksimru/event-scheduler/channel"
 	"github.com/maksimru/event-scheduler/fsm"
-	pubsublistenerconfig "github.com/maksimru/event-scheduler/listener/config"
+	pubsublistenerconfig "github.com/maksimru/event-scheduler/listener/pubsub/config"
 	"github.com/maksimru/event-scheduler/nodenameresolver"
-	pubsubpublisherconfig "github.com/maksimru/event-scheduler/publisher/config"
+	pubsubpublisherconfig "github.com/maksimru/event-scheduler/publisher/pubsub/config"
 	"github.com/maksimru/event-scheduler/storage"
 	"github.com/stretchr/testify/assert"
 	"testing"
@@ -17,6 +17,7 @@ func TestSchedulerChannelManager_BootChannelManager(t *testing.T) {
 	type fields struct {
 		cluster *raft.Raft
 		storage *storage.PqStorage
+		handler *channel.EventHandler
 	}
 	tests := []struct {
 		name    string
@@ -28,6 +29,7 @@ func TestSchedulerChannelManager_BootChannelManager(t *testing.T) {
 			fields: fields{
 				cluster: &raft.Raft{},
 				storage: storage.NewPqStorage(),
+				handler: channel.NewEventHandler(func(c channel.Channel) {}, func(c channel.Channel) {}, func(c channel.Channel) {}),
 			},
 			wantErr: false,
 		},
@@ -36,9 +38,9 @@ func TestSchedulerChannelManager_BootChannelManager(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			m := &SchedulerChannelManager{}
 			if !tt.wantErr {
-				assert.NoError(t, m.BootChannelManager(tt.fields.cluster, tt.fields.storage))
+				assert.NoError(t, m.BootChannelManager(tt.fields.cluster, tt.fields.storage, tt.fields.handler))
 			} else {
-				assert.Error(t, m.BootChannelManager(tt.fields.cluster, tt.fields.storage))
+				assert.Error(t, m.BootChannelManager(tt.fields.cluster, tt.fields.storage, tt.fields.handler))
 			}
 			assert.Equal(t, tt.fields.cluster, m.cluster)
 			assert.Equal(t, tt.fields.storage, m.storage)
@@ -112,10 +114,11 @@ func TestSchedulerChannelManager_GetChannels(t *testing.T) {
 			for _, c := range tt.channels {
 				_, _ = pqStorage.AddChannel(c)
 			}
-			sc := &SchedulerChannelManager{
-				cluster: cluster,
-				storage: pqStorage,
-			}
+			sc := NewSchedulerChannelManager(
+				cluster,
+				pqStorage,
+				nil,
+			)
 			got, err := sc.GetChannels()
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -256,12 +259,13 @@ func TestSchedulerChannelManager_AddChannel(t *testing.T) {
 			}})
 
 			// wait for election
-			time.Sleep(time.Second * 1)
+			time.Sleep(time.Second * 2)
 
-			m := &SchedulerChannelManager{
-				cluster: cluster,
-				storage: pqStorage,
-			}
+			m := NewSchedulerChannelManager(
+				cluster,
+				pqStorage,
+				nil,
+			)
 			got, err := m.AddChannel(tt.args.channelInput)
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -340,10 +344,11 @@ func TestSchedulerChannelManager_DeleteChannel(t *testing.T) {
 			// wait for election
 			time.Sleep(time.Second * 1)
 
-			m := &SchedulerChannelManager{
-				cluster: cluster,
-				storage: pqStorage,
-			}
+			m := NewSchedulerChannelManager(
+				cluster,
+				pqStorage,
+				nil,
+			)
 
 			for _, c := range tt.channels {
 				_, _ = pqStorage.AddChannel(c)
@@ -447,11 +452,11 @@ func TestSchedulerChannelManager_UpdateChannel(t *testing.T) {
 			// wait for election
 			time.Sleep(time.Second * 1)
 
-			m := &SchedulerChannelManager{
-				cluster: cluster,
-				storage: pqStorage,
-			}
-
+			m := NewSchedulerChannelManager(
+				cluster,
+				pqStorage,
+				nil,
+			)
 			for _, c := range tt.channels {
 				_, _ = pqStorage.AddChannel(c)
 			}

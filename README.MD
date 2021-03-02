@@ -5,7 +5,11 @@
 
 # What is it?
 
-Event-scheduler is a high available strongly consistent (powered by [raft](https://en.wikipedia.org/wiki/Raft_(algorithm))) application designed to receive messages from the source queue and release them to the target queue at requested time, specified in message attribute
+Event-scheduler is a high available strongly consistent (powered by [raft](https://en.wikipedia.org/wiki/Raft_(algorithm))) high performance application designed to receive messages from the source queue and release them to the target queue at requested time, specified in message attribute. You can have many number of channels (single source to single destination) at the same time (manageable through API)
+
+## Performance
+
+Application is able to find messages which are ready for dispatch in constant time and extract them in O(log N) time, where N is total number of messages in a channel
 
 ## Currently supported queue drivers
 
@@ -106,7 +110,7 @@ kubectl apply -f ./event-scheduler/kubernetes/deployment
 ## Future / Roadmap (Unordered)
 
 - Message compression
-- Multi-channel support + channel API
+~~- Multi-channel support + channel API~~
 - ~~High availability~~
 - ~~Persistence storage~~
 - Prometheus metrics
