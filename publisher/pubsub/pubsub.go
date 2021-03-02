@@ -5,7 +5,7 @@ import (
 	"context"
 	"github.com/maksimru/event-scheduler/channel"
 	"github.com/maksimru/event-scheduler/message"
-	pubsubconfig "github.com/maksimru/event-scheduler/publisher/config"
+	pubsubconfig "github.com/maksimru/event-scheduler/publisher/pubsub/config"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/api/option"
 )

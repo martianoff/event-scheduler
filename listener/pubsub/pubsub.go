@@ -4,7 +4,7 @@ import (
 	"cloud.google.com/go/pubsub"
 	"context"
 	"github.com/maksimru/event-scheduler/channel"
-	pubsubconfig "github.com/maksimru/event-scheduler/listener/config"
+	pubsubconfig "github.com/maksimru/event-scheduler/listener/pubsub/config"
 	"github.com/maksimru/event-scheduler/message"
 	"github.com/maksimru/event-scheduler/prioritizer"
 	log "github.com/sirupsen/logrus"

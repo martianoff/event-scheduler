@@ -6,7 +6,7 @@ import (
 	"context"
 	"github.com/maksimru/event-scheduler/channel"
 	"github.com/maksimru/event-scheduler/message"
-	pubsubconfig "github.com/maksimru/event-scheduler/publisher/config"
+	pubsubconfig "github.com/maksimru/event-scheduler/publisher/pubsub/config"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
@@ -53,7 +53,7 @@ func TestNewPubSubPublisher(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			p := NewPubSubPublisher(tt.args.context, tt.args.config)
 			tt.want.SetPubsubClient(p.client)
-			assert.Equal(t, tt.want, p)
+			assert.Equal(t, tt.want, *p)
 		})
 	}
 }

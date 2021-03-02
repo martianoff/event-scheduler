@@ -8,7 +8,7 @@ import (
 	"github.com/maksimru/event-scheduler/channel"
 	"github.com/maksimru/event-scheduler/config"
 	"github.com/maksimru/event-scheduler/fsm"
-	pubsubconfig "github.com/maksimru/event-scheduler/listener/config"
+	pubsubconfig "github.com/maksimru/event-scheduler/listener/pubsub/config"
 	"github.com/maksimru/event-scheduler/message"
 	"github.com/maksimru/event-scheduler/prioritizer"
 	"github.com/maksimru/event-scheduler/storage"
