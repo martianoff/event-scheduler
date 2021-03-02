@@ -749,8 +749,8 @@ func TestPqStorage_Dump(t *testing.T) {
 				}
 			}
 			gotChannels, gotMsgs := p.Dump()
-			assert.Equal(t, tt.wantChannels, gotChannels)
-			assert.Equal(t, tt.wantMsgs, gotMsgs)
+			assert.EqualValues(t, tt.wantChannels, gotChannels)
+			assert.EqualValues(t, tt.wantMsgs, gotMsgs)
 		})
 	}
 }
