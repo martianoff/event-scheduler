@@ -12,6 +12,30 @@ spec:
   selector:
     app: event-scheduler
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: event-scheduler-api
+  labels:
+    app: event-scheduler
+spec:
+  ports:
+    - port: 5569
+      name: api
+  type: LoadBalancer
+  selector:
+    app: event-scheduler
+---
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: event-scheduler-pdb
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: event-scheduler
+---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -29,6 +53,18 @@ spec:
       labels:
         app: event-scheduler
     spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - event-scheduler
+                topologyKey: kubernetes.io/hostname
       containers:
         - image: maxmtmn/event-scheduler:latest
           name: event-scheduler
@@ -55,6 +91,8 @@ spec:
               value: key.json
             - name: STORAGE_PATH
               value: /data
+            - name: API_PORT
+              value: 5569
             - name: NODE_NAME
               valueFrom:
                 fieldRef:
@@ -81,7 +119,7 @@ spec:
         name: storage
       spec:
         accessModes: [ "ReadWriteOnce" ]
-        storageClassName: "default"
+        storageClassName: "standard"
         resources:
           requests:
-            storage: 2Gi
+            storage: 10Gi

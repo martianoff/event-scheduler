@@ -127,22 +127,9 @@ func TestMainFunc(t *testing.T) {
 		removeDir        string
 	}{
 		{
-			name:             "Test wrongly configured application launch",
-			expectedExitCode: 1,
-			expectedPanic:    false,
-			env: map[string]string{
-				"LISTENER_DRIVER":       "test",
-				"PUBLISHER_DRIVER":      "test_w",
-				"STORAGE_PATH":          dir + "/tests/tempStorage1",
-				"CLUSTER_NODE_PORT":     "5555",
-				"CLUSTER_INITIAL_NODES": "localhost:5555",
-			},
-			removeDir: dir + "/tests/tempStorage1",
-		},
-		{
 			name:             "Test with unsupported drivers",
-			expectedExitCode: 1,
-			expectedPanic:    true,
+			expectedExitCode: 0,
+			expectedPanic:    false,
 			env: map[string]string{
 				"LISTENER_DRIVER":           "amqp",
 				"PUBLISHER_DRIVER":          "amqp",

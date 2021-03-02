@@ -3,6 +3,7 @@ package prioritizer
 import (
 	"context"
 	"github.com/hashicorp/raft"
+	"github.com/maksimru/event-scheduler/channel"
 	"github.com/maksimru/event-scheduler/fsm"
 	"github.com/maksimru/event-scheduler/message"
 	"github.com/maksimru/event-scheduler/storage"
@@ -50,13 +51,22 @@ func TestPrioritizer_Boot(t *testing.T) {
 	}
 }
 
+func inmemConfig() *raft.Config {
+	conf := raft.DefaultConfig()
+	conf.HeartbeatTimeout = 50 * time.Millisecond
+	conf.ElectionTimeout = 50 * time.Millisecond
+	conf.LeaderLeaseTimeout = 50 * time.Millisecond
+	conf.CommitTimeout = 5 * time.Millisecond
+	return conf
+}
+
 func bootStagingCluster(nodeId string, pqStorage *storage.PqStorage) (*raft.Raft, raft.ServerAddress) {
 	store := raft.NewInmemStore()
 	cacheStore, _ := raft.NewLogCache(128, store)
 	snapshotStore := raft.NewInmemSnapshotStore()
 	raftTransportTcpAddr := raft.NewInmemAddr()
 	_, transport := raft.NewInmemTransport(raftTransportTcpAddr)
-	raftconfig := raft.DefaultConfig()
+	raftconfig := inmemConfig()
 	raftconfig.LogLevel = "info"
 	raftconfig.LocalID = raft.ServerID(nodeId)
 	raftconfig.SnapshotThreshold = 512
@@ -71,11 +81,13 @@ func TestPrioritizer_Process(t *testing.T) {
 	type fields struct {
 	}
 	tests := []struct {
-		name        string
-		fields      fields
-		wantErr     bool
-		inboundMsgs []message.Message
-		want        []message.Message
+		name              string
+		fields            fields
+		wantErr           bool
+		inboundMsgs       []message.Message
+		want              []message.Message
+		availableChannels []channel.Channel
+		targetChannelID   string
 	}{
 		{
 			name:   "Check prioritizer can persist one message to the storage",
@@ -86,7 +98,13 @@ func TestPrioritizer_Process(t *testing.T) {
 			want: []message.Message{
 				message.NewMessage("msg1", 1000),
 			},
-			wantErr: false,
+			wantErr:         false,
+			targetChannelID: "ch1",
+			availableChannels: []channel.Channel{
+				{
+					ID: "ch1",
+				},
+			},
 		},
 		{
 			name:   "Check prioritizer can persist more than single message with right priority",
@@ -105,7 +123,13 @@ func TestPrioritizer_Process(t *testing.T) {
 				message.NewMessage("msg5", 1200),
 				message.NewMessage("msg4", 2000),
 			},
-			wantErr: false,
+			wantErr:         false,
+			targetChannelID: "ch1",
+			availableChannels: []channel.Channel{
+				{
+					ID: "ch1",
+				},
+			},
 		},
 	}
 	for testID, tt := range tests {
@@ -115,6 +139,7 @@ func TestPrioritizer_Process(t *testing.T) {
 			defer cancel()
 
 			pqStorage := storage.NewPqStorage()
+
 			nodeId := string(rune(testID))
 			cluster, clusterAddr := bootStagingCluster(nodeId, pqStorage)
 			defer func() {
@@ -135,17 +160,24 @@ func TestPrioritizer_Process(t *testing.T) {
 			}})
 
 			// wait for election
-			time.Sleep(time.Second * 3)
+			time.Sleep(time.Second * 1)
+
+			for _, c := range tt.availableChannels {
+				_, _ = pqStorage.AddChannel(c)
+			}
 
 			// insert requested input
 			for _, msg := range tt.inboundMsgs {
-				_ = p.Persist(msg)
+				_ = p.Persist(msg, channel.Channel{
+					ID: tt.targetChannelID,
+				})
 			}
 
 			// validate results
+			chStorage, _ := pqStorage.GetChannelStorage(tt.targetChannelID)
 			var got []message.Message
-			for !pqStorage.IsEmpty() {
-				got = append(got, pqStorage.Dequeue())
+			for !chStorage.IsEmpty() {
+				got = append(got, chStorage.Dequeue())
 			}
 
 			if !reflect.DeepEqual(got, tt.want) {

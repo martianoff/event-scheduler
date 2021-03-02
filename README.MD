@@ -5,7 +5,11 @@
 
 # What is it?
 
-Event-scheduler is a high available strongly consistent (powered by [raft](https://en.wikipedia.org/wiki/Raft_(algorithm))) application designed to receive messages from the source queue and release them to the target queue at requested time, specified in message attribute
+Event-scheduler is a high available strongly consistent (powered by [raft](https://en.wikipedia.org/wiki/Raft_(algorithm))) high performance application designed to receive messages from the source queue and release them to the target queue at requested time, specified in message attribute. You can have many number of channels (single source to single destination) at the same time (manageable through API)
+
+## Performance
+
+Application is able to find messages which are ready for dispatch in constant time and extract them in O(log N) time, where N is total number of messages in a channel
 
 ## Currently supported queue drivers
 
@@ -37,11 +41,55 @@ Event scheduler can be configured via env vars:
 | CLUSTER_NODE_HOST             | string     | localhost              | node host, should be accessible from other cluster nodes            |
 | CLUSTER_NODE_PORT             | string     | 5559              | node port for interaction with other cluster nodes           |
 | CLUSTER_INITIAL_NODES             | string     | localhost:5559              | comma separated list of cluster nodes           |
+| API_PORT             | string     | 5569              | api port           |
 
 ## Execution
 
 ```bash
 go run app/main.go
+```
+
+## API overview
+
+API is served on the port defined in API_PORT env var. You can use any node for API calls. Application will be able to automatically forward API requests to the leader node when needed
+
+## Cluster management API
+
+Get cluster status
+```bash
+curl -XGET "http://event-scheduler:5569/cluster" --header "Content-type: application/json"
+```
+
+Add node
+```bash
+curl -XPOST "http://event-scheduler:5569/cluster" --header "Content-type: application/json" -d '{"node_addr": "node4:5559"}'
+```
+
+Remove node
+```bash
+curl -XDELETE "http://event-scheduler:5569/cluster" --header "Content-type: application/json" -d '{"node_addr": "node4:5559"}'
+```
+
+## Channel management API
+
+Get channels
+```bash
+curl -XGET "http://event-scheduler:5569/channels" --header "Content-type: application/json"
+```
+
+Add channel
+```bash
+curl -XPOST "http://event-scheduler:5569/channels" --header "Content-type: application/json" -d '{"source":{"driver":"pubsub","config":{"project_id":"test_project","subscription_id":"test_subscription","key_file":"test_key_file"}},"destination":{"driver":"pubsub","config":{"project_id":"test_project","topic_id":"test_topic","key_file":"test_key_file"}}}'
+```
+
+Update channel
+```bash
+curl -XPATCH "http://event-scheduler:5569/channels/{channel_id}" --header "Content-type: application/json" -d '{"source":{"driver":"pubsub","config":{"project_id":"test_project","subscription_id":"test_subscription","key_file":"test_key_file"}},"destination":{"driver":"pubsub","config":{"project_id":"test_project","topic_id":"test_topic","key_file":"test_key_file"}}}'
+```
+
+Remove channel
+```bash
+curl -XDELETE "http://event-scheduler:5569/channels/{channel_id}" --header "Content-type: application/json"
 ```
 
 ## Tests
@@ -62,7 +110,7 @@ kubectl apply -f ./event-scheduler/kubernetes/deployment
 ## Future / Roadmap (Unordered)
 
 - Message compression
-- Multi-channel support + channel API
+~~- Multi-channel support + channel API~~
 - ~~High availability~~
 - ~~Persistence storage~~
 - Prometheus metrics

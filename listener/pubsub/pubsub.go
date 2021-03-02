@@ -3,7 +3,8 @@ package pubsub
 import (
 	"cloud.google.com/go/pubsub"
 	"context"
-	"github.com/maksimru/event-scheduler/config"
+	"github.com/maksimru/event-scheduler/channel"
+	pubsubconfig "github.com/maksimru/event-scheduler/listener/pubsub/config"
 	"github.com/maksimru/event-scheduler/message"
 	"github.com/maksimru/event-scheduler/prioritizer"
 	log "github.com/sirupsen/logrus"
@@ -13,17 +14,18 @@ import (
 )
 
 type Listener struct {
-	config      config.Config
+	config      pubsubconfig.SourceConfig
 	client      *pubsub.Client
 	context     context.Context
 	stopFunc    context.CancelFunc
 	prioritizer *prioritizer.Prioritizer
+	channel     channel.Channel
 }
 
-func (l *Listener) Boot(ctx context.Context, config config.Config, prioritizer *prioritizer.Prioritizer) error {
-	l.context, l.config = ctx, config
-	client, err := makePubsubClient(l.context, config)
-	l.client, l.prioritizer = client, prioritizer
+func (l *Listener) Boot(ctx context.Context, channel channel.Channel, prioritizer *prioritizer.Prioritizer) error {
+	l.context, l.config = ctx, channel.Source.Config.(pubsubconfig.SourceConfig)
+	client, err := makePubsubClient(l.context, l.config)
+	l.client, l.prioritizer, l.channel = client, prioritizer, channel
 	return err
 }
 
@@ -31,8 +33,8 @@ func (l *Listener) SetPubsubClient(client *pubsub.Client) {
 	l.client = client
 }
 
-func makePubsubClient(ctx context.Context, config config.Config) (*pubsub.Client, error) {
-	client, err := pubsub.NewClient(ctx, config.PubsubListenerProjectID, option.WithCredentialsFile(config.PubsubListenerKeyFile))
+func makePubsubClient(ctx context.Context, config pubsubconfig.SourceConfig) (*pubsub.Client, error) {
+	client, err := pubsub.NewClient(ctx, config.ProjectID, option.WithCredentialsFile(config.KeyFile))
 	if err != nil {
 		log.Error("listener client boot failure: ", err.Error())
 		return nil, err
@@ -56,7 +58,7 @@ func (l *Listener) Listen() error {
 		}
 	}()
 
-	sub := l.client.Subscription(l.config.PubsubListenerSubscriptionID)
+	sub := l.client.Subscription(l.config.SubscriptionID)
 	sub.ReceiveSettings.Synchronous = false
 	sub.ReceiveSettings.NumGoroutines = runtime.NumCPU()
 
@@ -82,7 +84,7 @@ func (l *Listener) Listen() error {
 					if err != nil {
 						log.Error("listener unable to read available_at attribute: ", err.Error())
 					} else {
-						err := l.prioritizer.Persist(message.NewMessage(string(msg.Data), priority))
+						err := l.prioritizer.Persist(message.NewMessage(string(msg.Data), priority), l.channel)
 						if err != nil {
 							log.Warn("listener is unable to persist received message")
 							// do not ack the message for strong consistency

@@ -6,24 +6,26 @@ import (
 	"context"
 	"github.com/enriquebris/goconcurrentqueue"
 	"github.com/hashicorp/raft"
+	"github.com/labstack/echo/v4"
+	"github.com/maksimru/event-scheduler/channel"
 	"github.com/maksimru/event-scheduler/config"
+	"github.com/maksimru/event-scheduler/dispatcher"
 	"github.com/maksimru/event-scheduler/listener"
 	listenerpubsub "github.com/maksimru/event-scheduler/listener/pubsub"
-	listenertest "github.com/maksimru/event-scheduler/listener/test"
+	pubsublistenerconfig "github.com/maksimru/event-scheduler/listener/pubsub/config"
 	"github.com/maksimru/event-scheduler/prioritizer"
 	"github.com/maksimru/event-scheduler/processor"
-	"github.com/maksimru/event-scheduler/publisher"
 	publisherpubsub "github.com/maksimru/event-scheduler/publisher/pubsub"
-	publishertest "github.com/maksimru/event-scheduler/publisher/test"
+	pubsubpublisherconfig "github.com/maksimru/event-scheduler/publisher/pubsub/config"
 	"github.com/maksimru/event-scheduler/storage"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
+	"net/http"
 	"os"
 	"path"
 	"reflect"
 	"runtime"
-	"strconv"
 	"testing"
 	"time"
 )
@@ -56,12 +58,12 @@ func TestNewScheduler(t *testing.T) {
 					ClusterNodePort: "5554",
 					ClusterNodeHost: "localhost",
 				},
-				listener:     nil,
-				publisher:    nil,
-				processor:    nil,
-				prioritizer:  nil,
-				dataStorage:  storage.NewPqStorage(),
-				outboundPool: goconcurrentqueue.NewFIFO(),
+				listeners:        make(map[string]listener.Listener),
+				listenerRunning:  make(map[string]bool),
+				processors:       make(map[string]*processor.Processor),
+				processorRunning: make(map[string]bool),
+				dataStorage:      storage.NewPqStorage(),
+				outboundPool:     goconcurrentqueue.NewFIFO(),
 			},
 		},
 	}
@@ -71,6 +73,10 @@ func TestNewScheduler(t *testing.T) {
 			if got := NewScheduler(context.Background(), tt.args.config); !reflect.DeepEqual(got, tt.want) {
 				assert.Equal(t, tt.want.config, got.config)
 				assert.Equal(t, tt.want.dataStorage, got.dataStorage)
+				assert.Equal(t, tt.want.listenerRunning, got.listenerRunning)
+				assert.Equal(t, tt.want.listeners, got.listeners)
+				assert.Equal(t, tt.want.processorRunning, got.processorRunning)
+				assert.Equal(t, tt.want.processors, got.processors)
 				assert.Equal(t, reflect.TypeOf(tt.want.outboundPool), reflect.TypeOf(got.outboundPool))
 			}
 		})
@@ -85,88 +91,68 @@ func getProjectPath() string {
 
 func TestScheduler_BootListener(t *testing.T) {
 	type fields struct {
-		config       config.Config
-		listener     listener.Listener
-		publisher    publisher.Publisher
-		processor    *processor.Processor
-		prioritizer  *prioritizer.Prioritizer
-		dataStorage  *storage.PqStorage
-		outboundPool *goconcurrentqueue.FIFO
+		listener listener.Listener
+		channel  channel.Channel
 	}
 	dir := getProjectPath()
 	tests := []struct {
 		name      string
 		fields    fields
 		want      *listenerpubsub.Listener
+		wantError bool
 		wantPanic bool
 	}{
 		{
 			name: "Check listener boot with amqp driver",
 			fields: fields{
-				config: config.Config{
-					LogFormat:                    "",
-					LogLevel:                     "",
-					ListenerDriver:               "amqp",
-					PubsubListenerProjectID:      "",
-					PubsubListenerSubscriptionID: "",
-					PubsubListenerKeyFile:        "",
-					PublisherDriver:              "",
-					PubsubPublisherProjectID:     "",
-					PubsubPublisherTopicID:       "",
-					PubsubPublisherKeyFile:       "",
-				},
-				listener:     nil,
-				publisher:    nil,
-				processor:    nil,
-				prioritizer:  nil,
-				dataStorage:  nil,
-				outboundPool: nil,
+				channel: channel.Channel{ID: "ch1", Source: channel.Source{
+					Driver: "amqp",
+				}},
 			},
 			want:      nil,
-			wantPanic: true,
+			wantPanic: false,
+			wantError: true,
 		},
 		{
 			name: "Check listener boot with pubsub driver",
 			fields: fields{
-				config: config.Config{
-					ListenerDriver:          "pubsub",
-					PubsubListenerProjectID: "testProjectId",
-					PubsubListenerKeyFile:   dir + "/tests/pubsub_cred_mock.json",
-				},
-				listener:     nil,
-				publisher:    nil,
-				processor:    nil,
-				prioritizer:  nil,
-				dataStorage:  nil,
-				outboundPool: nil,
+				channel: channel.Channel{ID: "ch1", Source: channel.Source{
+					Driver: "pubsub",
+					Config: pubsublistenerconfig.SourceConfig{
+						ProjectID:      "testProjectId",
+						SubscriptionID: "testSubscriptionId",
+						KeyFile:        dir + "/tests/pubsub_cred_mock.json",
+					},
+				}},
 			},
 			want:      &listenerpubsub.Listener{},
 			wantPanic: false,
+			wantError: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &Scheduler{
-				config:       tt.fields.config,
-				listener:     tt.fields.listener,
-				publisher:    tt.fields.publisher,
-				processor:    tt.fields.processor,
-				prioritizer:  tt.fields.prioritizer,
-				dataStorage:  tt.fields.dataStorage,
-				outboundPool: tt.fields.outboundPool,
+				listeners:       make(map[string]listener.Listener),
+				listenerRunning: make(map[string]bool),
 			}
 			if !tt.wantPanic {
+				var e error
 				assert.NotPanics(t, func() {
-					s.BootListener(context.Background())
+					e = s.BootListener(context.Background(), tt.fields.channel)
 				})
-				if s.listener != nil {
-					assert.IsType(t, tt.want, s.listener)
+				if tt.wantError {
+					assert.Error(t, e)
 				} else {
-					assert.Nil(t, tt.want, s.listener)
+					if _, has := s.listeners[tt.fields.channel.ID]; has {
+						assert.IsType(t, tt.want, s.listeners[tt.fields.channel.ID])
+					} else {
+						assert.Nil(t, tt.want, s.listeners[tt.fields.channel.ID])
+					}
 				}
 			} else {
 				assert.Panics(t, func() {
-					s.BootListener(context.Background())
+					s.BootListener(context.Background(), tt.fields.channel)
 				})
 			}
 		})
@@ -177,7 +163,7 @@ func TestScheduler_BootPrioritizer(t *testing.T) {
 	type fields struct {
 		config       config.Config
 		listener     listener.Listener
-		publisher    publisher.Publisher
+		dispatcher   dispatcher.Dispatcher
 		processor    *processor.Processor
 		prioritizer  *prioritizer.Prioritizer
 		dataStorage  *storage.PqStorage
@@ -194,7 +180,7 @@ func TestScheduler_BootPrioritizer(t *testing.T) {
 			fields: fields{
 				config:       config.Config{},
 				listener:     nil,
-				publisher:    nil,
+				dispatcher:   nil,
 				processor:    nil,
 				prioritizer:  nil,
 				dataStorage:  storage.NewPqStorage(),
@@ -207,9 +193,7 @@ func TestScheduler_BootPrioritizer(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &Scheduler{
 				config:       tt.fields.config,
-				listener:     tt.fields.listener,
-				publisher:    tt.fields.publisher,
-				processor:    tt.fields.processor,
+				dispatcher:   tt.fields.dispatcher,
 				prioritizer:  tt.fields.prioritizer,
 				dataStorage:  tt.fields.dataStorage,
 				outboundPool: tt.fields.outboundPool,
@@ -229,141 +213,63 @@ func TestScheduler_BootPrioritizer(t *testing.T) {
 
 func TestScheduler_BootProcessor(t *testing.T) {
 	type fields struct {
-		config       config.Config
-		listener     listener.Listener
-		publisher    publisher.Publisher
-		processor    *processor.Processor
-		prioritizer  *prioritizer.Prioritizer
-		dataStorage  *storage.PqStorage
+		channel      channel.Channel
+		context      context.Context
 		outboundPool *goconcurrentqueue.FIFO
-	}
-	tests := []struct {
-		name      string
-		fields    fields
-		wantPanic bool
-	}{
-		{
-			name: "Check processor boot with proper configuration",
-			fields: fields{
-				config:       config.Config{},
-				listener:     nil,
-				publisher:    nil,
-				processor:    nil,
-				prioritizer:  nil,
-				dataStorage:  storage.NewPqStorage(),
-				outboundPool: nil,
-			},
-			wantPanic: false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s := &Scheduler{
-				config:       tt.fields.config,
-				listener:     tt.fields.listener,
-				publisher:    tt.fields.publisher,
-				processor:    tt.fields.processor,
-				prioritizer:  tt.fields.prioritizer,
-				dataStorage:  tt.fields.dataStorage,
-				outboundPool: tt.fields.outboundPool,
-			}
-			if !tt.wantPanic {
-				assert.NotPanics(t, func() {
-					s.BootProcessor(context.Background())
-				})
-			} else {
-				assert.Panics(t, func() {
-					s.BootProcessor(context.Background())
-				})
-			}
-		})
-	}
-}
-
-func TestScheduler_BootPublisher(t *testing.T) {
-	type fields struct {
-		config       config.Config
-		listener     listener.Listener
-		publisher    publisher.Publisher
+		dispatcher   dispatcher.Dispatcher
 		processor    *processor.Processor
-		prioritizer  *prioritizer.Prioritizer
 		dataStorage  *storage.PqStorage
-		outboundPool *goconcurrentqueue.FIFO
+		cluster      *raft.Raft
 	}
 	dir := getProjectPath()
 	tests := []struct {
 		name      string
 		fields    fields
-		want      *publisherpubsub.Publisher
 		wantPanic bool
 	}{
 		{
-			name: "Check publisher boot with improper configuration",
+			name: "Check processor boot with improper configuration",
 			fields: fields{
-				config: config.Config{
-					LogFormat:                    "",
-					LogLevel:                     "",
-					ListenerDriver:               "",
-					PubsubListenerProjectID:      "",
-					PubsubListenerSubscriptionID: "",
-					PubsubListenerKeyFile:        "",
-					PublisherDriver:              "amqp",
-					PubsubPublisherProjectID:     "",
-					PubsubPublisherTopicID:       "",
-					PubsubPublisherKeyFile:       "",
-				},
-				listener:     nil,
-				publisher:    nil,
-				processor:    nil,
-				prioritizer:  nil,
-				dataStorage:  nil,
-				outboundPool: nil,
+				context:      context.Background(),
+				outboundPool: goconcurrentqueue.NewFIFO(),
+				channel:      channel.Channel{ID: "ch1"},
 			},
-			want:      nil,
-			wantPanic: true,
+			wantPanic: false,
 		},
 		{
-			name: "Check publisher boot with proper configuration",
+			name: "Check processor boot with proper configuration",
 			fields: fields{
-				config: config.Config{
-					PublisherDriver:          "pubsub",
-					PubsubPublisherProjectID: "testProjectId",
-					PubsubPublisherKeyFile:   dir + "/tests/pubsub_cred_mock.json",
-				},
-				listener:     nil,
-				publisher:    nil,
-				processor:    nil,
-				prioritizer:  nil,
-				dataStorage:  nil,
-				outboundPool: nil,
+				context:      context.Background(),
+				outboundPool: goconcurrentqueue.NewFIFO(),
+				channel: channel.Channel{ID: "ch1", Destination: channel.Destination{
+					Driver: "pubsub",
+					Config: pubsubpublisherconfig.DestinationConfig{
+						ProjectID: "testProjectId",
+						TopicID:   "testTopicId",
+						KeyFile:   dir + "/tests/pubsub_cred_mock.json",
+					},
+				}},
 			},
-			want:      &publisherpubsub.Publisher{},
 			wantPanic: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &Scheduler{
-				config:       tt.fields.config,
-				listener:     tt.fields.listener,
-				publisher:    tt.fields.publisher,
-				processor:    tt.fields.processor,
-				prioritizer:  tt.fields.prioritizer,
-				dataStorage:  tt.fields.dataStorage,
-				outboundPool: tt.fields.outboundPool,
+				dispatcher:       dispatcher.NewDispatcher(tt.fields.context, tt.fields.outboundPool, tt.fields.dataStorage),
+				dataStorage:      tt.fields.dataStorage,
+				outboundPool:     tt.fields.outboundPool,
+				raftCluster:      tt.fields.cluster,
+				processors:       make(map[string]*processor.Processor),
+				processorRunning: make(map[string]bool),
 			}
 			if !tt.wantPanic {
 				assert.NotPanics(t, func() {
-					s.BootPublisher(context.Background())
+					s.BootProcessor(context.Background(), tt.fields.channel)
 				})
-				if s.publisher != nil {
-					assert.IsType(t, tt.want, s.publisher)
-				} else {
-					assert.Nil(t, tt.want, s.publisher)
-				}
 			} else {
 				assert.Panics(t, func() {
-					s.BootPublisher(context.Background())
+					s.BootProcessor(context.Background(), tt.fields.channel)
 				})
 			}
 		})
@@ -374,7 +280,7 @@ func TestScheduler_GetConfig(t *testing.T) {
 	type fields struct {
 		config       config.Config
 		listener     listener.Listener
-		publisher    publisher.Publisher
+		dispatcher   dispatcher.Dispatcher
 		processor    *processor.Processor
 		prioritizer  *prioritizer.Prioritizer
 		dataStorage  *storage.PqStorage
@@ -385,18 +291,22 @@ func TestScheduler_GetConfig(t *testing.T) {
 		fields fields
 		want   config.Config
 	}{
-		// TODO: Add test cases.
+		{
+			name: "Check config getter",
+			fields: fields{
+				config: config.Config{
+					LogLevel: "error",
+				},
+			},
+			want: config.Config{
+				LogLevel: "error",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &Scheduler{
-				config:       tt.fields.config,
-				listener:     tt.fields.listener,
-				publisher:    tt.fields.publisher,
-				processor:    tt.fields.processor,
-				prioritizer:  tt.fields.prioritizer,
-				dataStorage:  tt.fields.dataStorage,
-				outboundPool: tt.fields.outboundPool,
+				config: tt.fields.config,
 			}
 			if got := s.GetConfig(); !reflect.DeepEqual(got, tt.want) {
 				assert.Equal(t, tt.want, got)
@@ -409,29 +319,30 @@ func TestScheduler_GetDataStorage(t *testing.T) {
 	type fields struct {
 		config       config.Config
 		listener     listener.Listener
-		publisher    publisher.Publisher
+		dispatcher   dispatcher.Dispatcher
 		processor    *processor.Processor
 		prioritizer  *prioritizer.Prioritizer
 		dataStorage  *storage.PqStorage
 		outboundPool *goconcurrentqueue.FIFO
 	}
+	s := storage.NewPqStorage()
 	tests := []struct {
 		name   string
 		fields fields
 		want   *storage.PqStorage
 	}{
-		// TODO: Add test cases.
+		{
+			name: "Check datastorage getter",
+			fields: fields{
+				dataStorage: s,
+			},
+			want: s,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &Scheduler{
-				config:       tt.fields.config,
-				listener:     tt.fields.listener,
-				publisher:    tt.fields.publisher,
-				processor:    tt.fields.processor,
-				prioritizer:  tt.fields.prioritizer,
-				dataStorage:  tt.fields.dataStorage,
-				outboundPool: tt.fields.outboundPool,
+				dataStorage: tt.fields.dataStorage,
 			}
 			if got := s.GetDataStorage(); !reflect.DeepEqual(got, tt.want) {
 				assert.Equal(t, tt.want, got)
@@ -444,61 +355,33 @@ func TestScheduler_GetOutboundPool(t *testing.T) {
 	type fields struct {
 		config       config.Config
 		listener     listener.Listener
-		publisher    publisher.Publisher
+		dispatcher   dispatcher.Dispatcher
 		processor    *processor.Processor
 		prioritizer  *prioritizer.Prioritizer
 		dataStorage  *storage.PqStorage
 		outboundPool *goconcurrentqueue.FIFO
 	}
+	o := goconcurrentqueue.NewFIFO()
 	tests := []struct {
 		name   string
 		fields fields
 		want   *goconcurrentqueue.FIFO
 	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s := &Scheduler{
-				config:       tt.fields.config,
-				listener:     tt.fields.listener,
-				publisher:    tt.fields.publisher,
-				processor:    tt.fields.processor,
-				prioritizer:  tt.fields.prioritizer,
-				dataStorage:  tt.fields.dataStorage,
-				outboundPool: tt.fields.outboundPool,
-			}
-			if got := s.GetOutboundPool(); !reflect.DeepEqual(got, tt.want) {
-				assert.Equal(t, tt.want, got)
-			}
-		})
-	}
-}
-
-func TestScheduler_GetPublisher(t *testing.T) {
-	type fields struct {
-		publisher publisher.Publisher
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		want   publisher.Publisher
-	}{
 		{
-			name: "Check publisher getter",
+			name: "Check outbound pool getter",
 			fields: fields{
-				publisher: new(publishertest.Publisher),
+				outboundPool: o,
 			},
-			want: new(publishertest.Publisher),
+			want: o,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &Scheduler{
-				publisher: tt.fields.publisher,
+				outboundPool: tt.fields.outboundPool,
 			}
-			if got := s.GetPublisher(); !reflect.DeepEqual(got, tt.want) {
-				assert.Equal(t, tt.want, *got)
+			if got := s.GetOutboundPool(); !reflect.DeepEqual(got, tt.want) {
+				assert.Equal(t, tt.want, got)
 			}
 		})
 	}
@@ -533,50 +416,21 @@ func TestScheduler_GetCluster(t *testing.T) {
 	}
 }
 
-func TestScheduler_GetListener(t *testing.T) {
-	type fields struct {
-		listener listener.Listener
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		want   listener.Listener
-	}{
-		{
-			name: "Check listener getter",
-			fields: fields{
-				listener: new(listenertest.Listener),
-			},
-			want: new(listenertest.Listener),
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s := &Scheduler{
-				listener: tt.fields.listener,
-			}
-			if got := s.GetListener(); !reflect.DeepEqual(got, tt.want) {
-				assert.Equal(t, tt.want, *got)
-			}
-		})
-	}
-}
-
-func mockPubsubListenerClient(ctx context.Context, t *testing.T, pubsubServerConn *grpc.ClientConn, cfg config.Config) (*pubsub.Client, *pubsub.Topic) {
-	pubsubClient, _ := pubsub.NewClient(ctx, "", option.WithGRPCConn(pubsubServerConn))
-	topic, err := pubsubClient.CreateTopic(ctx, cfg.PubsubListenerSubscriptionID)
+func mockPubsubListenerClient(ctx context.Context, t *testing.T, pubsubServerConn *grpc.ClientConn, projectID string, subscriptionID string) (*pubsub.Client, *pubsub.Topic) {
+	pubsubClient, _ := pubsub.NewClient(ctx, projectID, option.WithGRPCConn(pubsubServerConn))
+	topic, err := pubsubClient.CreateTopic(ctx, subscriptionID)
 	if err != nil {
 		t.Error(err)
 	}
-	_, _ = pubsubClient.CreateSubscription(ctx, cfg.PubsubListenerSubscriptionID, pubsub.SubscriptionConfig{
+	_, _ = pubsubClient.CreateSubscription(ctx, subscriptionID, pubsub.SubscriptionConfig{
 		Topic: topic,
 	})
 	return pubsubClient, topic
 }
 
-func mockPubsubPublisherClient(ctx context.Context, t *testing.T, pubsubServerConn *grpc.ClientConn, cfg config.Config) (*pubsub.Client, *pubsub.Topic) {
-	pubsubClient, _ := pubsub.NewClient(ctx, "", option.WithGRPCConn(pubsubServerConn))
-	topic, err := pubsubClient.CreateTopic(ctx, cfg.PubsubPublisherTopicID)
+func mockPubsubPublisherClient(ctx context.Context, t *testing.T, pubsubServerConn *grpc.ClientConn, projectID string, topicID string) (*pubsub.Client, *pubsub.Topic) {
+	pubsubClient, _ := pubsub.NewClient(ctx, projectID, option.WithGRPCConn(pubsubServerConn))
+	topic, err := pubsubClient.CreateTopic(ctx, topicID)
 	if err != nil {
 		t.Error(err)
 	}
@@ -588,6 +442,8 @@ func TestScheduler_Run(t *testing.T) {
 		config       config.Config
 		dataStorage  *storage.PqStorage
 		outboundPool *goconcurrentqueue.FIFO
+		channel      channel.Channel
+		httpServer   *echo.Echo
 	}
 
 	dir := getProjectPath()
@@ -603,20 +459,33 @@ func TestScheduler_Run(t *testing.T) {
 		{
 			name: "Test pubsub to pubsub event scheduler with all available messages",
 			fields: fields{
+				channel: channel.Channel{
+					ID: "ch1",
+					Source: channel.Source{
+						Driver: "pubsub",
+						Config: pubsublistenerconfig.SourceConfig{
+							KeyFile:        dir + "/tests/pubsub_cred_mock.json",
+							SubscriptionID: "mocklistener_1",
+						},
+					},
+					Destination: channel.Destination{
+						Driver: "pubsub",
+						Config: pubsubpublisherconfig.DestinationConfig{
+							KeyFile: dir + "/tests/pubsub_cred_mock.json",
+							TopicID: "mockpublisher_1",
+						},
+					},
+				},
 				config: config.Config{
-					ListenerDriver:           "pubsub",
-					PubsubListenerProjectID:  "testProjectId",
-					PubsubListenerKeyFile:    dir + "/tests/pubsub_cred_mock.json",
-					PublisherDriver:          "pubsub",
-					PubsubPublisherProjectID: "testProjectId",
-					PubsubPublisherKeyFile:   dir + "/tests/pubsub_cred_mock.json",
-					StoragePath:              getProjectPath() + "/tests/tempStorageSt1",
-					ClusterNodePort:          "5558",
-					ClusterNodeHost:          "localhost",
-					ClusterInitialNodes:      "localhost:5558",
+					StoragePath:         getProjectPath() + "/tests/tempStorageSt1",
+					ClusterNodePort:     "5558",
+					ClusterNodeHost:     "localhost",
+					ClusterInitialNodes: "localhost:5558",
+					APIPort:             "5561",
 				},
 				outboundPool: goconcurrentqueue.NewFIFO(),
 				dataStorage:  storage.NewPqStorage(),
+				httpServer:   echo.New(),
 			},
 			publish: []pubsub.Message{{
 				Data:       []byte("msg1"),
@@ -641,20 +510,33 @@ func TestScheduler_Run(t *testing.T) {
 		{
 			name: "Test pubsub to pubsub event scheduler with some unavailable messages",
 			fields: fields{
+				channel: channel.Channel{
+					ID: "ch1",
+					Source: channel.Source{
+						Driver: "pubsub",
+						Config: pubsublistenerconfig.SourceConfig{
+							KeyFile:        dir + "/tests/pubsub_cred_mock.json",
+							SubscriptionID: "mocklistener_1",
+						},
+					},
+					Destination: channel.Destination{
+						Driver: "pubsub",
+						Config: pubsubpublisherconfig.DestinationConfig{
+							KeyFile: dir + "/tests/pubsub_cred_mock.json",
+							TopicID: "mockpublisher_1",
+						},
+					},
+				},
 				config: config.Config{
-					ListenerDriver:           "pubsub",
-					PubsubListenerProjectID:  "testProjectId",
-					PubsubListenerKeyFile:    dir + "/tests/pubsub_cred_mock.json",
-					PublisherDriver:          "pubsub",
-					PubsubPublisherProjectID: "testProjectId",
-					PubsubPublisherKeyFile:   dir + "/tests/pubsub_cred_mock.json",
-					StoragePath:              getProjectPath() + "/tests/tempStorageSt2",
-					ClusterNodePort:          "5559",
-					ClusterNodeHost:          "localhost",
-					ClusterInitialNodes:      "localhost:5559",
+					StoragePath:         getProjectPath() + "/tests/tempStorageSt2",
+					ClusterNodePort:     "5559",
+					ClusterNodeHost:     "localhost",
+					ClusterInitialNodes: "localhost:5559",
+					APIPort:             "5562",
 				},
 				outboundPool: goconcurrentqueue.NewFIFO(),
 				dataStorage:  storage.NewPqStorage(),
+				httpServer:   echo.New(),
 			},
 			publish: []pubsub.Message{{
 				Data:       []byte("msg1"),
@@ -676,14 +558,35 @@ func TestScheduler_Run(t *testing.T) {
 		},
 	}
 
-	for testID, tt := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 
+			// mock individual context for each test
+			ctx := context.Background()
+			ctx, cancel := context.WithTimeout(ctx, time.Second*10)
+			defer cancel()
+
 			s := &Scheduler{
-				config:       tt.fields.config,
-				outboundPool: tt.fields.outboundPool,
-				dataStorage:  tt.fields.dataStorage,
+				config:           tt.fields.config,
+				outboundPool:     tt.fields.outboundPool,
+				dataStorage:      tt.fields.dataStorage,
+				dispatcher:       dispatcher.NewDispatcher(ctx, tt.fields.outboundPool, tt.fields.dataStorage),
+				httpServer:       tt.fields.httpServer,
+				listenerRunning:  make(map[string]bool),
+				listeners:        make(map[string]listener.Listener),
+				processorRunning: make(map[string]bool),
+				processors:       make(map[string]*processor.Processor),
 			}
+
+			// bind webserver with context for graceful termination
+			/*
+				if err := s.httpServer.Shutdown(ctx); err != nil && err != http.ErrServerClosed {
+					s.httpServer.Logger.Fatal(err)
+				}
+			*/
+			defer func() {
+				_ = s.httpServer.Close()
+			}()
 
 			// mock pubsub servers
 			sourcePubsubServer := pstest.NewServer()
@@ -696,11 +599,6 @@ func TestScheduler_Run(t *testing.T) {
 				_ = destPubsubServer.Close()
 			}()
 
-			// mock individual context for each test
-			ctx := context.Background()
-			ctx, cancel := context.WithTimeout(ctx, time.Second*10)
-			defer cancel()
-
 			_ = os.RemoveAll(tt.fields.config.StoragePath)
 			s.BootCluster(ctx)
 			defer func() {
@@ -709,41 +607,59 @@ func TestScheduler_Run(t *testing.T) {
 
 			s.BootPrioritizer(ctx)
 
-			tt.fields.config.PubsubListenerSubscriptionID = "mocklistener" + strconv.Itoa(testID)
-			tt.fields.config.PubsubPublisherTopicID = "mockpublisher" + strconv.Itoa(testID)
+			c := tt.fields.channel
+
+			scfg := c.Source.Config.(pubsublistenerconfig.SourceConfig)
+
+			dcfg := c.Destination.Config.(pubsubpublisherconfig.DestinationConfig)
 
 			// make pubsub listener client-server connection
 			sourcePubsubServerConn, _ := grpc.Dial(sourcePubsubServer.Addr, grpc.WithInsecure())
 			defer func() {
 				_ = sourcePubsubServerConn.Close()
 			}()
-			sourcePubsubClient, topic := mockPubsubListenerClient(ctx, t, sourcePubsubServerConn, tt.fields.config)
+			sourcePubsubClient, topic := mockPubsubListenerClient(ctx, t, sourcePubsubServerConn, scfg.ProjectID, scfg.SubscriptionID)
 			pubsubListener := &listenerpubsub.Listener{}
-			_ = pubsubListener.Boot(ctx, tt.fields.config, s.prioritizer)
+			_ = pubsubListener.Boot(ctx, c, s.prioritizer)
 			pubsubListener.SetPubsubClient(sourcePubsubClient)
 
-			// make pubsub publisher client-server connection
+			// make pubsub dispatcher client-server connection
 			destPubsubServerConn, _ := grpc.Dial(destPubsubServer.Addr, grpc.WithInsecure())
 			defer func() {
 				_ = destPubsubServerConn.Close()
 			}()
-			destPubsubClient, _ := mockPubsubPublisherClient(ctx, t, destPubsubServerConn, tt.fields.config)
-			pubsubPublisher := &publisherpubsub.Publisher{}
-			_ = pubsubPublisher.Boot(ctx, tt.fields.config, s.outboundPool)
+			destPubsubClient, _ := mockPubsubPublisherClient(ctx, t, destPubsubServerConn, dcfg.ProjectID, dcfg.TopicID)
+			pubsubPublisher := publisherpubsub.NewPubSubPublisher(ctx, dcfg)
 			pubsubPublisher.SetPubsubClient(destPubsubClient)
+
+			d := s.dispatcher.(*dispatcher.MessageDispatcher)
+			d.SetPublisher(c.ID, pubsubPublisher)
 
 			// publish test messages
 			for _, msg := range tt.publish {
 				sourcePubsubServer.Publish(topic.String(), msg.Data, msg.Attributes)
 			}
 
-			s.publisher = pubsubPublisher
-			s.listener = pubsubListener
-			s.BootProcessor(ctx)
-			s.processor.SetTime(tt.time)
-
 			// wait for election
 			time.Sleep(time.Second * 4)
+
+			// register channel
+			_, _ = s.dataStorage.AddChannel(c)
+
+			// run mock listener
+			s.listenerRunning[c.ID] = true
+			s.listeners[c.ID] = pubsubListener
+			go func(s *Scheduler) {
+				_ = pubsubListener.Listen()
+			}(s)
+
+			// run mock processor
+			s.processorRunning[c.ID] = true
+			s.BootProcessor(ctx, c)
+			go func(s *Scheduler) {
+				s.processors[c.ID].SetTime(tt.time)
+				_ = s.processors[c.ID].Process()
+			}(s)
 
 			// execute application
 			err := s.Run(ctx)
@@ -779,24 +695,21 @@ func TestScheduler_ClusterLeaderChangeCallback(t *testing.T) {
 	type fields struct {
 		config          config.Config
 		listener        listener.Listener
-		publisher       publisher.Publisher
+		dispatcher      dispatcher.Dispatcher
 		processor       *processor.Processor
 		prioritizer     *prioritizer.Prioritizer
 		dataStorage     *storage.PqStorage
 		outboundPool    *goconcurrentqueue.FIFO
 		raftCluster     *raft.Raft
+		httpServer      *echo.Echo
 		listenerRunning bool
-	}
-	type args struct {
-		isLeader bool
 	}
 	tests := []struct {
 		name   string
 		fields fields
-		args   args
 	}{
 		{
-			name: "Check listener stops on lose leadership",
+			name: "Check listeners and processors stops on lose of leadership and starts on gain of leadership",
 			fields: fields{
 				config: config.Config{
 					ListenerDriver:      "test",
@@ -805,40 +718,62 @@ func TestScheduler_ClusterLeaderChangeCallback(t *testing.T) {
 					ClusterNodePort:     "5553",
 					ClusterNodeHost:     "localhost",
 					ClusterInitialNodes: "localhost:5553",
+					APIPort:             "5563",
 				},
 				outboundPool: goconcurrentqueue.NewFIFO(),
 				dataStorage:  storage.NewPqStorage(),
-			},
-			args: args{
-				isLeader: false,
+				httpServer:   echo.New(),
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := &Scheduler{
-				config:       tt.fields.config,
-				outboundPool: tt.fields.outboundPool,
-				dataStorage:  tt.fields.dataStorage,
-			}
 
 			// mock individual context for each test
 			ctx := context.Background()
-			ctx, cancel := context.WithTimeout(ctx, time.Second*6)
+			ctx, cancel := context.WithTimeout(ctx, time.Second*8)
 			defer cancel()
 
+			s := &Scheduler{
+				config:           tt.fields.config,
+				outboundPool:     tt.fields.outboundPool,
+				dataStorage:      tt.fields.dataStorage,
+				httpServer:       tt.fields.httpServer,
+				listenerRunning:  make(map[string]bool),
+				listeners:        make(map[string]listener.Listener),
+				processorRunning: make(map[string]bool),
+				processors:       make(map[string]*processor.Processor),
+			}
+			s.channelHandler = channel.NewEventHandler(s.channelUpdated(ctx), s.channelDeleted(ctx), s.channelAdded(ctx))
+
+			// bind webserver with context for graceful termination
+			if err := s.httpServer.Shutdown(ctx); err != nil && err != http.ErrServerClosed {
+				s.httpServer.Logger.Fatal(err)
+			}
+			defer func() {
+				_ = s.httpServer.Close()
+			}()
+
 			_ = os.RemoveAll(tt.fields.config.StoragePath)
-			s.BootListener(ctx)
 			s.BootCluster(ctx)
 			defer func() {
 				_ = s.raftCluster.Shutdown()
 			}()
+			s.BootChannelManager(ctx)
 
 			time.Sleep(time.Second * 2)
-			assert.Equal(t, true, s.listenerRunning)
-			s.ClusterLeaderChangeCallback(ctx, tt.args.isLeader)
+			assert.Equal(t, true, s.listenerRunning[defaultChannelName])
+			assert.Equal(t, true, s.processorRunning[defaultChannelName])
+			// emulate lose of leadership
+			s.clusterLeaderChangeCallback(ctx, false)
 			time.Sleep(time.Second * 2)
-			assert.Equal(t, false, s.listenerRunning)
+			assert.Equal(t, false, s.listenerRunning[defaultChannelName])
+			assert.Equal(t, false, s.processorRunning[defaultChannelName])
+			// emulate gain of leadership
+			s.clusterLeaderChangeCallback(ctx, true)
+			time.Sleep(time.Second * 2)
+			assert.Equal(t, true, s.listenerRunning[defaultChannelName])
+			assert.Equal(t, true, s.processorRunning[defaultChannelName])
 		})
 	}
 }
