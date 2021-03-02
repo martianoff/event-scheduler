@@ -2,12 +2,12 @@ package listener
 
 import (
 	"context"
-	"github.com/maksimru/event-scheduler/config"
+	"github.com/maksimru/event-scheduler/channel"
 	"github.com/maksimru/event-scheduler/prioritizer"
 )
 
 type Listener interface {
-	Boot(context.Context, config.Config, *prioritizer.Prioritizer) error
+	Boot(context.Context, channel.Channel, *prioritizer.Prioritizer) error
 	Listen() error
 	Stop() error
 }

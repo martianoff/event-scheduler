@@ -5,8 +5,10 @@ import (
 	"cloud.google.com/go/pubsub/pstest"
 	"context"
 	"github.com/hashicorp/raft"
+	"github.com/maksimru/event-scheduler/channel"
 	"github.com/maksimru/event-scheduler/config"
 	"github.com/maksimru/event-scheduler/fsm"
+	pubsubconfig "github.com/maksimru/event-scheduler/listener/pubsub/config"
 	"github.com/maksimru/event-scheduler/message"
 	"github.com/maksimru/event-scheduler/prioritizer"
 	"github.com/maksimru/event-scheduler/storage"
@@ -24,19 +26,17 @@ import (
 
 func TestListenerPubsub_Boot(t *testing.T) {
 	type fields struct {
-		config      config.Config
+		context     context.Context
 		prioritizer *prioritizer.Prioritizer
+		channel     channel.Channel
 	}
 	type args struct {
 		context     context.Context
 		config      config.Config
 		prioritizer *prioritizer.Prioritizer
+		channel     channel.Channel
 	}
 	dir := getProjectPath()
-	cfg := config.Config{
-		PubsubListenerProjectID: "testProjectId",
-		PubsubListenerKeyFile:   dir + "/tests/pubsub_cred_mock.json",
-	}
 	tests := []struct {
 		name    string
 		fields  fields
@@ -46,13 +46,32 @@ func TestListenerPubsub_Boot(t *testing.T) {
 		{
 			name: "Check pubsub listener boot",
 			fields: fields{
-				config:      cfg,
 				prioritizer: new(prioritizer.Prioritizer),
+				channel: channel.Channel{
+					Source: channel.Source{
+						Driver: "pubsub",
+						Config: pubsubconfig.SourceConfig{
+							ProjectID:      "pr",
+							SubscriptionID: "sub",
+							KeyFile:        dir + "/tests/pubsub_cred_mock.json",
+						},
+					},
+				},
+				context: context.Background(),
 			},
 			args: args{
 				context:     context.Background(),
-				config:      cfg,
 				prioritizer: new(prioritizer.Prioritizer),
+				channel: channel.Channel{
+					Source: channel.Source{
+						Driver: "pubsub",
+						Config: pubsubconfig.SourceConfig{
+							ProjectID:      "pr",
+							SubscriptionID: "sub",
+							KeyFile:        dir + "/tests/pubsub_cred_mock.json",
+						},
+					},
+				},
 			},
 			wantErr: false,
 		},
@@ -60,13 +79,14 @@ func TestListenerPubsub_Boot(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			l := &Listener{
-				config:      tt.fields.config,
+				context:     tt.fields.context,
 				prioritizer: tt.fields.prioritizer,
+				channel:     tt.fields.channel,
 			}
 			if !tt.wantErr {
-				assert.NoError(t, l.Boot(tt.args.context, tt.args.config, tt.args.prioritizer))
+				assert.NoError(t, l.Boot(tt.args.context, tt.args.channel, tt.args.prioritizer))
 			} else {
-				assert.Error(t, l.Boot(tt.args.context, tt.args.config, tt.args.prioritizer))
+				assert.Error(t, l.Boot(tt.args.context, tt.args.channel, tt.args.prioritizer))
 			}
 		})
 	}
@@ -81,7 +101,7 @@ func getProjectPath() string {
 func Test_makePubsubClient(t *testing.T) {
 	type args struct {
 		ctx    context.Context
-		config config.Config
+		config pubsubconfig.SourceConfig
 	}
 	dir := getProjectPath()
 	tests := []struct {
@@ -94,9 +114,9 @@ func Test_makePubsubClient(t *testing.T) {
 			name: "Check make pubsub client with proper configuration",
 			args: args{
 				ctx: context.Background(),
-				config: config.Config{
-					PubsubListenerProjectID: "testProjectId",
-					PubsubListenerKeyFile:   dir + "/tests/pubsub_cred_mock.json",
+				config: pubsubconfig.SourceConfig{
+					ProjectID: "testProjectId",
+					KeyFile:   dir + "/tests/pubsub_cred_mock.json",
 				},
 			},
 			wantErr: false,
@@ -116,16 +136,25 @@ func Test_makePubsubClient(t *testing.T) {
 	}
 }
 
-func mockPubsubClient(ctx context.Context, t *testing.T, pubsubServerConn *grpc.ClientConn, cfg config.Config) (*pubsub.Client, *pubsub.Topic) {
+func mockPubsubClient(ctx context.Context, t *testing.T, pubsubServerConn *grpc.ClientConn, cfg pubsubconfig.SourceConfig) (*pubsub.Client, *pubsub.Topic) {
 	pubsubClient, _ := pubsub.NewClient(ctx, "", option.WithGRPCConn(pubsubServerConn))
-	topic, err := pubsubClient.CreateTopic(ctx, cfg.PubsubListenerSubscriptionID)
+	topic, err := pubsubClient.CreateTopic(ctx, cfg.SubscriptionID)
 	if err != nil {
 		t.Error(err)
 	}
-	_, _ = pubsubClient.CreateSubscription(ctx, cfg.PubsubListenerSubscriptionID, pubsub.SubscriptionConfig{
+	_, _ = pubsubClient.CreateSubscription(ctx, cfg.SubscriptionID, pubsub.SubscriptionConfig{
 		Topic: topic,
 	})
 	return pubsubClient, topic
+}
+
+func inmemConfig() *raft.Config {
+	conf := raft.DefaultConfig()
+	conf.HeartbeatTimeout = 50 * time.Millisecond
+	conf.ElectionTimeout = 50 * time.Millisecond
+	conf.LeaderLeaseTimeout = 50 * time.Millisecond
+	conf.CommitTimeout = 5 * time.Millisecond
+	return conf
 }
 
 func bootStagingCluster(nodeId string, pqStorage *storage.PqStorage) (*raft.Raft, raft.ServerAddress) {
@@ -134,7 +163,7 @@ func bootStagingCluster(nodeId string, pqStorage *storage.PqStorage) (*raft.Raft
 	snapshotStore := raft.NewInmemSnapshotStore()
 	raftTransportTcpAddr := raft.NewInmemAddr()
 	_, transport := raft.NewInmemTransport(raftTransportTcpAddr)
-	raftconfig := raft.DefaultConfig()
+	raftconfig := inmemConfig()
 	raftconfig.LogLevel = "info"
 	raftconfig.LocalID = raft.ServerID(nodeId)
 	raftconfig.SnapshotThreshold = 512
@@ -147,6 +176,8 @@ func bootStagingCluster(nodeId string, pqStorage *storage.PqStorage) (*raft.Raft
 
 func TestListenerPubsub_Listen(t *testing.T) {
 	type fields struct {
+		channel           channel.Channel
+		availableChannels []channel.Channel
 	}
 	pubsubServer := pstest.NewServer()
 	defer func() {
@@ -162,8 +193,20 @@ func TestListenerPubsub_Listen(t *testing.T) {
 		want         []message.Message
 	}{
 		{
-			name:   "Check pubsub listener can receive single message with available_at attribute",
-			fields: fields{},
+			name: "Check pubsub listener can receive single message with available_at attribute",
+			fields: fields{
+				channel: channel.Channel{
+					ID: "ch1",
+					Source: channel.Source{
+						Driver: "pubsub",
+					},
+				},
+				availableChannels: []channel.Channel{
+					{
+						ID: "ch1",
+					},
+				},
+			},
 			publish: []*pubsub.Message{{
 				Data:       []byte("foo"),
 				Attributes: map[string]string{"available_at": "1000"},
@@ -173,8 +216,20 @@ func TestListenerPubsub_Listen(t *testing.T) {
 			want:         []message.Message{message.NewMessage("foo", 1000)},
 		},
 		{
-			name:   "Check pubsub listener can receive single message without available_at attribute",
-			fields: fields{},
+			name: "Check pubsub listener can receive single message without available_at attribute",
+			fields: fields{
+				channel: channel.Channel{
+					ID: "ch1",
+					Source: channel.Source{
+						Driver: "pubsub",
+					},
+				},
+				availableChannels: []channel.Channel{
+					{
+						ID: "ch1",
+					},
+				},
+			},
 			publish: []*pubsub.Message{{
 				Data:       []byte("foo"),
 				Attributes: map[string]string{},
@@ -184,8 +239,20 @@ func TestListenerPubsub_Listen(t *testing.T) {
 			want:         []message.Message{},
 		},
 		{
-			name:   "Check pubsub listener can receive single message with wrong available_at attribute",
-			fields: fields{},
+			name: "Check pubsub listener can receive single message with wrong available_at attribute",
+			fields: fields{
+				channel: channel.Channel{
+					ID: "ch1",
+					Source: channel.Source{
+						Driver: "pubsub",
+					},
+				},
+				availableChannels: []channel.Channel{
+					{
+						ID: "ch1",
+					},
+				},
+			},
 			publish: []*pubsub.Message{{
 				Data:       []byte("foo"),
 				Attributes: map[string]string{"available_at": "foo"},
@@ -195,8 +262,20 @@ func TestListenerPubsub_Listen(t *testing.T) {
 			want:         []message.Message{},
 		},
 		{
-			name:   "Check pubsub listener can receive multiple messages",
-			fields: fields{},
+			name: "Check pubsub listener can receive multiple messages",
+			fields: fields{
+				channel: channel.Channel{
+					ID: "ch1",
+					Source: channel.Source{
+						Driver: "pubsub",
+					},
+				},
+				availableChannels: []channel.Channel{
+					{
+						ID: "ch1",
+					},
+				},
+			},
 			publish: []*pubsub.Message{{
 				Data:       []byte("msg1"),
 				Attributes: map[string]string{"available_at": "1000"},
@@ -216,8 +295,20 @@ func TestListenerPubsub_Listen(t *testing.T) {
 			},
 		},
 		{
-			name:   "Check pubsub listener can receive multiple messages with publish delay",
-			fields: fields{},
+			name: "Check pubsub listener can receive multiple messages with publish delay",
+			fields: fields{
+				channel: channel.Channel{
+					ID: "ch1",
+					Source: channel.Source{
+						Driver: "pubsub",
+					},
+				},
+				availableChannels: []channel.Channel{
+					{
+						ID: "ch1",
+					},
+				},
+			},
 			publish: []*pubsub.Message{{
 				Data:       []byte("msg1"),
 				Attributes: map[string]string{"available_at": "1000"},
@@ -253,7 +344,7 @@ func TestListenerPubsub_Listen(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// mock individual context for each test
 			ctx := context.Background()
-			ctx, cancel := context.WithTimeout(ctx, time.Second*6)
+			ctx, cancel := context.WithTimeout(ctx, time.Second*5)
 			defer cancel()
 
 			pqStorage := storage.NewPqStorage()
@@ -280,8 +371,15 @@ func TestListenerPubsub_Listen(t *testing.T) {
 				t.Fatal("Cluster bootstrap failed: ", err)
 			}
 
-			cfg := config.Config{
-				PubsubListenerSubscriptionID: "mocksubscription" + strconv.Itoa(testID),
+			// wait for election
+			time.Sleep(time.Second * 1)
+
+			for _, c := range tt.fields.availableChannels {
+				_, _ = pqStorage.AddChannel(c)
+			}
+
+			cfg := pubsubconfig.SourceConfig{
+				SubscriptionID: "mocksubscription" + strconv.Itoa(testID),
 			}
 
 			// make pubsub client-server connection
@@ -296,6 +394,7 @@ func TestListenerPubsub_Listen(t *testing.T) {
 				client:      pubsubClient,
 				context:     ctx,
 				prioritizer: p,
+				channel:     tt.fields.channel,
 			}
 
 			// publish test messages
@@ -329,9 +428,10 @@ func TestListenerPubsub_Listen(t *testing.T) {
 			g.Wait()
 
 			// read received messages
+			chStorage, _ := pqStorage.GetChannelStorage(tt.fields.channel.ID)
 			var got []message.Message
-			for !pqStorage.IsEmpty() {
-				item := pqStorage.Dequeue()
+			for !chStorage.IsEmpty() {
+				item := chStorage.Dequeue()
 				got = append(got, item)
 			}
 			// compare received messages

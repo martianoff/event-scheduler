@@ -2,7 +2,7 @@ package test
 
 import (
 	"context"
-	"github.com/maksimru/event-scheduler/config"
+	"github.com/maksimru/event-scheduler/channel"
 	"github.com/maksimru/event-scheduler/prioritizer"
 	log "github.com/sirupsen/logrus"
 	"time"
@@ -13,7 +13,7 @@ type Listener struct {
 	stopFunc context.CancelFunc
 }
 
-func (l *Listener) Boot(ctx context.Context, config config.Config, prioritizer *prioritizer.Prioritizer) error {
+func (l *Listener) Boot(ctx context.Context, _ channel.Channel, _ *prioritizer.Prioritizer) error {
 	l.context = ctx
 	return nil
 }
