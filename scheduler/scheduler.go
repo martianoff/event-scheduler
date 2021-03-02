@@ -212,9 +212,12 @@ func (s *Scheduler) BootCluster(ctx context.Context) {
 	for k, nodeHost := range initialClusterNodes {
 		initialClusterServers[k] = raft.Server{
 			Suffrage: raft.Voter,
-			ID:       nodenameresolver.Resolve(raftTransportTcpAddr),
+			ID:       nodenameresolver.Resolve(nodeHost),
 			Address:  raft.ServerAddress(nodeHost),
 		}
+	}
+	if len(initialClusterServers) > 0 {
+		log.Info("initial nodes ", initialClusterServers)
 	}
 	s.raftCluster.BootstrapCluster(raft.Configuration{Servers: initialClusterServers})
 }
