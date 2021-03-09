@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"github.com/hashicorp/raft"
 	"github.com/maksimru/event-scheduler/channel"
+	pubsublistenerconfig "github.com/maksimru/event-scheduler/listener/pubsub/config"
 	"github.com/maksimru/event-scheduler/message"
 	"github.com/maksimru/event-scheduler/nodenameresolver"
+	pubsubpublisherconfig "github.com/maksimru/event-scheduler/publisher/pubsub/config"
 	"github.com/maksimru/event-scheduler/storage"
 	"github.com/stretchr/testify/assert"
 	"io"
@@ -138,6 +140,62 @@ func Test_prioritizedFSM_Restore(t *testing.T) {
 					ID:          "id1",
 					Source:      channel.Source{},
 					Destination: channel.Destination{},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Checks fsm snapshot restoration in single channel, full config",
+			fields: fields{
+				storage: storage.NewPqStorage(),
+			},
+			messages: map[string][]message.Message{
+				"id1": {
+					message.NewMessage("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", 1000),
+					message.NewMessage("YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY", 1200),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+				},
+			},
+			channels: []channel.Channel{
+				{
+					ID: "id1",
+					Source: channel.Source{
+						Driver: "pubsub",
+						Config: pubsublistenerconfig.SourceConfig{
+							ProjectID:      "project",
+							SubscriptionID: "subscription",
+							KeyFile:        "key",
+						},
+					},
+					Destination: channel.Destination{
+						Driver: "pubsub",
+						Config: pubsubpublisherconfig.DestinationConfig{
+							ProjectID: "project",
+							TopicID:   "topic",
+							KeyFile:   "key",
+						},
+					},
 				},
 			},
 			wantErr: false,
@@ -313,8 +371,9 @@ func Test_prioritizedFSM_Restore(t *testing.T) {
 			if !reflect.DeepEqual(gotChannels, tt.channels) {
 				assert.ElementsMatch(t, tt.channels, gotChannels)
 			}
-			if !reflect.DeepEqual(gotMessages, tt.messages) {
-				assert.ElementsMatch(t, tt.messages, gotMessages)
+			for k, msgs := range tt.messages {
+				assert.Equal(t, len(msgs), len(gotMessages[k]))
+				assert.Equal(t, msgs, gotMessages[k])
 			}
 		})
 	}

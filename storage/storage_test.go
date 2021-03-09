@@ -773,10 +773,7 @@ func TestPqStorage_Dump(t *testing.T) {
 				}
 			}
 			gotChannels, gotMsgs := p.Dump()
-			for k, channels := range gotChannels {
-				assert.Equal(t, tt.wantChannels[k], channels)
-			}
-			assert.Equal(t, len(tt.wantChannels), len(gotChannels))
+			assert.ElementsMatch(t, tt.wantChannels, gotChannels)
 			for k, msgs := range gotMsgs {
 				assert.Equal(t, tt.wantMsgs[k], msgs)
 			}
@@ -971,7 +968,7 @@ func TestPqStorage_GetChannels(t *testing.T) {
 				data:     tt.fields.data,
 			}
 			if got := p.GetChannels(); !reflect.DeepEqual(got, tt.want) {
-				assert.Equal(t, tt.want, got)
+				assert.ElementsMatch(t, tt.want, got)
 			}
 		})
 	}
