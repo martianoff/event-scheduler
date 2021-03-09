@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"github.com/hashicorp/raft"
 	"github.com/maksimru/event-scheduler/channel"
+	pubsublistenerconfig "github.com/maksimru/event-scheduler/listener/pubsub/config"
 	"github.com/maksimru/event-scheduler/message"
 	"github.com/maksimru/event-scheduler/nodenameresolver"
+	pubsubpublisherconfig "github.com/maksimru/event-scheduler/publisher/pubsub/config"
 	"github.com/maksimru/event-scheduler/storage"
 	"github.com/stretchr/testify/assert"
 	"io"
@@ -143,6 +145,79 @@ func Test_prioritizedFSM_Restore(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "Checks fsm snapshot restoration in single channel, full config",
+			fields: fields{
+				storage: storage.NewPqStorage(),
+			},
+			messages: map[string][]message.Message{
+				"id1": {
+					message.NewMessage("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", 1000),
+					message.NewMessage("YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY", 1200),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+					message.NewMessage("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ", 2000),
+				},
+			},
+			channels: []channel.Channel{
+				{
+					ID: "id1",
+					Source: channel.Source{
+						Driver: "pubsub",
+						Config: pubsublistenerconfig.SourceConfig{
+							ProjectID:      "project",
+							SubscriptionID: "subscription",
+							KeyFile:        "key",
+						},
+					},
+					Destination: channel.Destination{
+						Driver: "pubsub",
+						Config: pubsubpublisherconfig.DestinationConfig{
+							ProjectID: "project",
+							TopicID:   "topic",
+							KeyFile:   "key",
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Checks fsm snapshot restoration in single channel, empty channel",
+			fields: fields{
+				storage: storage.NewPqStorage(),
+			},
+			messages: map[string][]message.Message{
+				"id1": {},
+			},
+			channels: []channel.Channel{
+				{
+					ID:          "id1",
+					Source:      channel.Source{},
+					Destination: channel.Destination{},
+				},
+			},
+			wantErr: false,
+		},
+		{
 			name: "Checks fsm snapshot restoration in multiple channels",
 			fields: fields{
 				storage: storage.NewPqStorage(),
@@ -158,6 +233,29 @@ func Test_prioritizedFSM_Restore(t *testing.T) {
 					message.NewMessage("msg8", 3200),
 					message.NewMessage("msg6", 1000),
 				},
+			},
+			channels: []channel.Channel{
+				{
+					ID:          "id1",
+					Source:      channel.Source{},
+					Destination: channel.Destination{},
+				},
+				{
+					ID:          "id2",
+					Source:      channel.Source{},
+					Destination: channel.Destination{},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Checks fsm snapshot restoration in multiple channels, empty channel",
+			fields: fields{
+				storage: storage.NewPqStorage(),
+			},
+			messages: map[string][]message.Message{
+				"id1": {},
+				"id2": {},
 			},
 			channels: []channel.Channel{
 				{
@@ -208,6 +306,7 @@ func Test_prioritizedFSM_Restore(t *testing.T) {
 			if !reflect.DeepEqual(gotMessages, tt.messages) {
 				assert.Equal(t, map[string][]message.Message{}, gotMessages)
 			}
+
 			for _, c := range tt.channels {
 				opPayload := CommandPayload{
 					Operation: OperationChannelCreate,
@@ -241,20 +340,28 @@ func Test_prioritizedFSM_Restore(t *testing.T) {
 			snapshot := cluster.Snapshot()
 
 			if err := snapshot.Error(); err != nil {
+				assert.NoError(t, err)
 				t.Fatal("failed to take the snapshot: ", err)
 			}
 
 			snapshots, err := snapshotStore.List()
+			assert.NoError(t, err)
 			if err != nil {
 				t.Fatal("failed to list snapshots: ", err)
 			}
 			assert.Equal(t, 1, len(snapshots))
+
+			// ensure storage is empty
+			f.storage.Flush()
+
 			for _, s := range snapshots {
 				_, source, err := snapshotStore.Open(s.ID)
+				assert.NoError(t, err)
 				if err != nil {
 					t.Fatal("failed to open snapshot: ", err)
 				}
 				err = f.Restore(source)
+				assert.NoError(t, err)
 				if err != nil {
 					t.Fatal("failed to restore the snapshot: ", err)
 				}
@@ -264,8 +371,9 @@ func Test_prioritizedFSM_Restore(t *testing.T) {
 			if !reflect.DeepEqual(gotChannels, tt.channels) {
 				assert.ElementsMatch(t, tt.channels, gotChannels)
 			}
-			if !reflect.DeepEqual(gotMessages, tt.messages) {
-				assert.ElementsMatch(t, tt.messages, gotMessages)
+			for k, msgs := range tt.messages {
+				assert.Equal(t, len(msgs), len(gotMessages[k]))
+				assert.Equal(t, msgs, gotMessages[k])
 			}
 		})
 	}

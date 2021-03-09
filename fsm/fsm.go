@@ -1,7 +1,7 @@
 package fsm
 
 import (
-	"bytes"
+	"bufio"
 	"encoding/json"
 	"github.com/hashicorp/raft"
 	"github.com/maksimru/event-scheduler/channel"
@@ -47,55 +47,53 @@ type fsmSnapshot struct {
 	messagesDump map[string][]message.Message
 }
 
-const MSG_BATCH_SIZE int = 1000
+type ChannelMessage struct {
+	ChannelID string
+	Message   message.Message
+}
+
+type Structs byte
+
+const MessageStruct Structs = 1
+const ChannelsStruct Structs = 2
+
+func (f fsmSnapshot) persistChannels(sink raft.SnapshotSink, encoder *json.Encoder) error {
+	for _, c := range f.channelsDump {
+		sink.Write([]byte{byte(ChannelsStruct)})
+		err := encoder.Encode(c)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (f fsmSnapshot) persistMessages(sink raft.SnapshotSink, encoder *json.Encoder) error {
+	for _, c := range f.channelsDump {
+		for _, msg := range f.messagesDump[c.ID] {
+			sink.Write([]byte{byte(MessageStruct)})
+			err := encoder.Encode(&ChannelMessage{
+				ChannelID: c.ID,
+				Message:   msg,
+			})
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
 
 // Persist should dump all necessary state to the WriteCloser 'sink',
 // and call sink.Close() when finished or call sink.Cancel() on error.
 func (f fsmSnapshot) Persist(sink raft.SnapshotSink) error {
 	err := func() error {
 
-		buf := new(bytes.Buffer)
-		encoder := json.NewEncoder(buf)
-		channelBuf := new(bytes.Buffer)
-		channelEncoder := json.NewEncoder(channelBuf)
-
-		for _, c := range f.channelsDump {
-			// persist channels
-			err := encoder.Encode(c)
-			if err != nil {
-				return err
-			}
-			// write data to sink.
-			if _, err := sink.Write(buf.Bytes()); err != nil {
-				return err
-			}
-			buf.Reset()
-
-			// persist messages
-			msgIdx := 0
-			for _, msg := range f.messagesDump[c.ID] {
-				err := channelEncoder.Encode(msg)
-				if err != nil {
-					return err
-				}
-				msgIdx++
-				if msgIdx%MSG_BATCH_SIZE == 0 {
-					// write data to sink.
-					if _, err := sink.Write(channelBuf.Bytes()); err != nil {
-						return err
-					}
-					channelBuf.Reset()
-				}
-			}
-			// write remaining messages
-			if _, err := sink.Write(channelBuf.Bytes()); err != nil {
-				return err
-			}
-			channelBuf.Reset()
+		encoder := json.NewEncoder(sink)
+		if err := f.persistChannels(sink, encoder); err != nil {
+			return err
 		}
-
-		// Close the sink.
-		if err := sink.Close(); err != nil {
+		if err := f.persistMessages(sink, encoder); err != nil {
 			return err
 		}
 
@@ -103,8 +101,14 @@ func (f fsmSnapshot) Persist(sink raft.SnapshotSink) error {
 	}()
 
 	if err != nil {
+		log.Errorf("error during snapshot persist %s\n", err.Error())
 		_ = sink.Cancel()
 		return err
+	} else {
+		// Close the sink.
+		if err := sink.Close(); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -228,40 +232,38 @@ func (b prioritizedFSM) Restore(rClose io.ReadCloser) error {
 	var totalMessagesRestored int
 
 	b.storage.Flush()
-	// using two pointers we can jump between two data structures
-	lastPos := json.NewDecoder(rClose)
-	decoder := json.NewDecoder(rClose)
-	var lastChannel channel.Channel
-	for decoder.More() {
-		var c channel.Channel
-		err := decoder.Decode(&c)
+	reader := bufio.NewReader(rClose)
+	for {
+		// Read the message type
+		prefix, err := reader.ReadByte()
 		if err == io.EOF {
 			break
-		}
-		if err != nil {
-			log.Errorf("Snapshot restore failed: error decode data %s\n", err.Error())
+		} else if err != nil {
 			return err
 		}
-		if c.ID != "" {
-			lastChannel, _ = b.storage.AddChannel(c)
-			totalChannelsRestored++
-			*lastPos = *decoder
-		} else {
-			//jump to last correct position
-			*decoder = *lastPos
-			var m message.Message
-			err := decoder.Decode(&m)
-			if err == io.EOF {
-				break
-			}
+		structType := Structs(prefix)
+		switch structType {
+		case ChannelsStruct:
+			var c channel.Channel
+			data, _, _ := reader.ReadLine()
+			err := json.Unmarshal(data, &c)
 			if err != nil {
-				log.Errorf("Snapshot restore failed: error decode data %s\n", err.Error())
+				log.Errorf("Snapshot restore failed: error decode channel data %s\n", err.Error())
 				return err
 			}
-			*lastPos = *decoder
-			s, has := b.storage.GetChannelStorage(lastChannel.ID)
+			b.storage.AddChannel(remapChannelConfig(c))
+			totalChannelsRestored++
+		case MessageStruct:
+			var m ChannelMessage
+			data, _, _ := reader.ReadLine()
+			err := json.Unmarshal(data, &m)
+			if err != nil {
+				log.Errorf("Snapshot restore failed: error decode message data %s\n", err.Error())
+				return err
+			}
+			s, has := b.storage.GetChannelStorage(m.ChannelID)
 			if has {
-				s.Enqueue(m)
+				s.Enqueue(m.Message)
 				totalMessagesRestored++
 			} else {
 				log.Error("Unable to find channel information inside the snapshot")

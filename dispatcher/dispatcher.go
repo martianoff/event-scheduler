@@ -50,8 +50,6 @@ func (d *MessageDispatcher) SetPublisher(channelID string, p publisher.Publisher
 }
 
 func (d *MessageDispatcher) getChannelPublisher(channelID string) (publisher.Publisher, error) {
-	// TODO: handle channel updates
-	// reuse existing publisher if available
 	p, has := d.publishers[channelID]
 	if has {
 		return p, nil
