@@ -30,19 +30,21 @@ Event scheduler can be configured via env vars:
 | LOG_FORMAT            | string    | text             | log format output: json, text, gcp           |
 | LOG_LEVEL             | string     | info              | log verbosity            |
 | LISTENER_DRIVER             | string     | pubsub              | source (scheduled) messages queue driver          |
-| PUBSUB_LISTENER_PROJECT_ID             | string     |               | source queue pubsub project id            |
-| PUBSUB_LISTENER_SUBSCRIPTION_ID             | string     |               | source queue pubsub subscription id            |
-| PUBSUB_LISTENER_KEY_FILE             | string     |               | path to pubsub service account access key file for source queue           |
-| PUBLISHER_DRIVER             | string     | pubsub              | target messages queue driver            |
-| PUBSUB_PUBLISHER_PROJECT_ID             | string     |               | target queue pubsub project id            |
-| PUBSUB_PUBLISHER_TOPIC_ID             | string     |               | target queue pubsub topic id            |
-| PUBSUB_PUBLISHER_KEY_FILE             | string     |               | path to pubsub service account access key file for target queue            |
+| PUBSUB_LISTENER_PROJECT_ID             | string     |               | (*) source queue pubsub project id            |
+| PUBSUB_LISTENER_SUBSCRIPTION_ID             | string     |               | (*) source queue pubsub subscription id            |
+| PUBSUB_LISTENER_KEY_FILE             | string     |               | (*) path to pubsub service account access key file for source queue           |
+| PUBLISHER_DRIVER             | string     | pubsub              | (*) target messages queue driver            |
+| PUBSUB_PUBLISHER_PROJECT_ID             | string     |               | (*) target queue pubsub project id            |
+| PUBSUB_PUBLISHER_TOPIC_ID             | string     |               | (*) target queue pubsub topic id            |
+| PUBSUB_PUBLISHER_KEY_FILE             | string     |               | (*) path to pubsub service account access key file for target queue            |
 | STORAGE_PATH             | string     | storage              | path for persistent data storage            |
 | CLUSTER_NODE_HOST             | string     | localhost              | node host, should be accessible from other cluster nodes            |
 | CLUSTER_NODE_PORT             | string     | 5559              | node port for interaction with other cluster nodes           |
 | CLUSTER_INITIAL_NODES             | string     | localhost:5559              | comma separated list of cluster nodes           |
 | API_PORT             | string     | 5569              | api port           |
 
+[*] - initial value for default channel, can be omitted and configured later using API
+    
 ## Execution
 
 ```bash
@@ -109,13 +111,13 @@ kubectl apply -f ./event-scheduler/kubernetes/deployment
 
 ## Future / Roadmap (Unordered)
 
-- Message compression
-~~- Multi-channel support + channel API~~
+- ~~Multi-channel support + channel API~~
 - ~~High availability~~
-- ~~Persistence storage~~
-- Prometheus metrics
+- ~~Persistent storage~~
 - ~~Test cases~~
-- Horizontal scaling / Sharding
-- Helm package
 - ~~Docker build~~
 - ~~Sample kubernetes deployment~~
+- Message compression
+- Prometheus metrics
+- Horizontal scaling / Sharding
+- Helm package

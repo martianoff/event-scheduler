@@ -143,6 +143,23 @@ func Test_prioritizedFSM_Restore(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "Checks fsm snapshot restoration in single channel, empty channel",
+			fields: fields{
+				storage: storage.NewPqStorage(),
+			},
+			messages: map[string][]message.Message{
+				"id1": {},
+			},
+			channels: []channel.Channel{
+				{
+					ID:          "id1",
+					Source:      channel.Source{},
+					Destination: channel.Destination{},
+				},
+			},
+			wantErr: false,
+		},
+		{
 			name: "Checks fsm snapshot restoration in multiple channels",
 			fields: fields{
 				storage: storage.NewPqStorage(),
@@ -158,6 +175,29 @@ func Test_prioritizedFSM_Restore(t *testing.T) {
 					message.NewMessage("msg8", 3200),
 					message.NewMessage("msg6", 1000),
 				},
+			},
+			channels: []channel.Channel{
+				{
+					ID:          "id1",
+					Source:      channel.Source{},
+					Destination: channel.Destination{},
+				},
+				{
+					ID:          "id2",
+					Source:      channel.Source{},
+					Destination: channel.Destination{},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Checks fsm snapshot restoration in multiple channels, empty channel",
+			fields: fields{
+				storage: storage.NewPqStorage(),
+			},
+			messages: map[string][]message.Message{
+				"id1": {},
+				"id2": {},
 			},
 			channels: []channel.Channel{
 				{
@@ -208,6 +248,7 @@ func Test_prioritizedFSM_Restore(t *testing.T) {
 			if !reflect.DeepEqual(gotMessages, tt.messages) {
 				assert.Equal(t, map[string][]message.Message{}, gotMessages)
 			}
+
 			for _, c := range tt.channels {
 				opPayload := CommandPayload{
 					Operation: OperationChannelCreate,
@@ -241,20 +282,28 @@ func Test_prioritizedFSM_Restore(t *testing.T) {
 			snapshot := cluster.Snapshot()
 
 			if err := snapshot.Error(); err != nil {
+				assert.NoError(t, err)
 				t.Fatal("failed to take the snapshot: ", err)
 			}
 
 			snapshots, err := snapshotStore.List()
+			assert.NoError(t, err)
 			if err != nil {
 				t.Fatal("failed to list snapshots: ", err)
 			}
 			assert.Equal(t, 1, len(snapshots))
+
+			// ensure storage is empty
+			f.storage.Flush()
+
 			for _, s := range snapshots {
 				_, source, err := snapshotStore.Open(s.ID)
+				assert.NoError(t, err)
 				if err != nil {
 					t.Fatal("failed to open snapshot: ", err)
 				}
 				err = f.Restore(source)
+				assert.NoError(t, err)
 				if err != nil {
 					t.Fatal("failed to restore the snapshot: ", err)
 				}

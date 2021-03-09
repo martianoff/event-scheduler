@@ -72,14 +72,12 @@ func (f fsmSnapshot) Persist(sink raft.SnapshotSink) error {
 			buf.Reset()
 
 			// persist messages
-			msgIdx := 0
-			for _, msg := range f.messagesDump[c.ID] {
+			for msgIdx, msg := range f.messagesDump[c.ID] {
 				err := channelEncoder.Encode(msg)
 				if err != nil {
 					return err
 				}
-				msgIdx++
-				if msgIdx%MSG_BATCH_SIZE == 0 {
+				if msgIdx > 0 && msgIdx%MSG_BATCH_SIZE == 0 {
 					// write data to sink.
 					if _, err := sink.Write(channelBuf.Bytes()); err != nil {
 						return err
@@ -94,17 +92,18 @@ func (f fsmSnapshot) Persist(sink raft.SnapshotSink) error {
 			channelBuf.Reset()
 		}
 
-		// Close the sink.
-		if err := sink.Close(); err != nil {
-			return err
-		}
-
 		return nil
 	}()
 
 	if err != nil {
+		log.Errorf("error during snapshot persist %s\n", err.Error())
 		_ = sink.Cancel()
 		return err
+	} else {
+		// Close the sink.
+		if err := sink.Close(); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -239,7 +238,7 @@ func (b prioritizedFSM) Restore(rClose io.ReadCloser) error {
 			break
 		}
 		if err != nil {
-			log.Errorf("Snapshot restore failed: error decode data %s\n", err.Error())
+			log.Errorf("Snapshot restore failed: error decode channel data %s\n", err.Error())
 			return err
 		}
 		if c.ID != "" {
@@ -255,7 +254,7 @@ func (b prioritizedFSM) Restore(rClose io.ReadCloser) error {
 				break
 			}
 			if err != nil {
-				log.Errorf("Snapshot restore failed: error decode data %s\n", err.Error())
+				log.Errorf("Snapshot restore failed: error decode message data %s, last channel %v\n", err.Error(), lastChannel)
 				return err
 			}
 			*lastPos = *decoder
