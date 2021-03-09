@@ -81,7 +81,7 @@ func TestMessageDispatcher_Dispatch(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			ctx, cancel := context.WithTimeout(ctx, time.Second*1)
+			ctx, cancel := context.WithTimeout(ctx, time.Second*2)
 			defer cancel()
 
 			d := &MessageDispatcher{

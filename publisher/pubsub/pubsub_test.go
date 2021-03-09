@@ -154,7 +154,7 @@ func TestPubsubPublisher_Dispatch(t *testing.T) {
 			}()
 			// mock individual context for each test
 			ctx := context.Background()
-			ctx, cancel := context.WithTimeout(ctx, time.Second*1)
+			ctx, cancel := context.WithTimeout(ctx, time.Second*2)
 			defer cancel()
 
 			cfg := pubsubconfig.DestinationConfig{
